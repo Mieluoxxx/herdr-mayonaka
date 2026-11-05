@@ -80,7 +80,7 @@
           "id": "tabs",
           "type": "block",
           "content": {
-            "mod": "tabs"
+            "mod": "mayonaka-tabs"
           },
           "size": {
             "px": 42
@@ -140,6 +140,13 @@
                       "type": "block",
                       "content": {
                         "mod": "changes"
+                      }
+                    },
+                    {
+                      "id": "gitgraph",
+                      "type": "block",
+                      "content": {
+                        "mod": "mayonaka-gitgraph"
                       }
                     }
                   ],

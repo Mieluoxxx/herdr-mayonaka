@@ -2,7 +2,8 @@
 
 A dark, quiet Herdr workspace: a slim rail sidebar with your spaces and agents,
 tab pills across the top, and terminals as rounded cards. A Files panel opens
-on the right and edits files in a code pane beside the terminals.
+on the right and edits files in a code pane beside the terminals; next to it,
+Changes and a Git Graph of every branch.
 
 ![Mayonaka](preview.png)
 
@@ -13,17 +14,22 @@ on the right and edits files in a code pane beside the terminals.
   on its right; the spaces list and the agents list below it, sharing the height
   evenly, 90px minimum each; a 69px footer holding *Settings* (with a dot when an
   update is ready) and *Add machine*, separated by a 1px top border.
-- **Tab bar, 42px** across the top of the work area: the shipped `tabs` mod —
-  tab pills, a `+` menu, and the *Files* / *Changes* buttons on the right.
+- **Tab bar, 42px** across the top of the work area: `mayonaka-tabs`, the shipped
+  `tabs` with one more button — tab pills, a `+` menu, and the *Files* /
+  *Changes* / *Git Graph* buttons on the right.
 - **Main, the rest**: the shown tab's terminals, each as a card with a 10px radius,
   1px `border` (an `accent` border while focused), an 8px gap between panes, and a
   30px pane header that is always visible. Single-pane tabs are framed too.
   The area around the cards has 8px padding and an 8px gap.
 - **Files panel, right, 368px** (`min` 280, `max` 900, closed until you open it):
-  a stack of two panels, *Files* (`mayonaka-files`) and *Changes* (the shipped
-  `changes`). *Files* lists the focused pane's folder in 28px rows — chevron,
+  a stack of three panels, *Files* (`mayonaka-files`), *Changes* (the shipped
+  `changes`) and *Git Graph* (`mayonaka-gitgraph`). *Files* lists the focused pane's folder in 28px rows — chevron,
   folder or file glyph, name, and a one-letter git mark (`M` `A` `D` `U`) — with a
-  42px header showing the folder or the open file's name.
+  42px header showing the folder or the open file's name. *Git Graph* draws the
+  repository's local branches, remote branches and tags as colored lanes in 24px
+  rows — the graph, ref pills (`HEAD → main · origin`, `◆ tag`), the subject, the
+  short SHA and the date — with an *Uncommitted Changes* row on top when the
+  tree is dirty.
 - **Status bar, bottom, 28px**: the shipped `workspace-status`.
 - Look: 10px radius cards on a `canvas` background, terminal padding 14px vertical
   by 12px horizontal, no system title bar (the layout draws its own), macOS window
@@ -45,7 +51,13 @@ on the right and edits files in a code pane beside the terminals.
   the eye / code buttons in its 34px header switch. `⌘S` saves, `⌘V`-style paste
   and undo are the editor's own. Files over 1 MiB and binaries are refused.
   Remote spaces are read-only (the pane gets its file through `exec --on`).
-- The Files / Changes buttons show the panel for that space and remember it per
+- **Git Graph**: click a commit to see its full message, author, date, parents
+  and changed files below the list; click it again to close. Clicking the
+  *Uncommitted Changes* row offers *Open in Changes*. It follows the focused
+  pane's repository like Changes, shows the newest 600 commits (`--date-order`),
+  merges as hollow dots and HEAD with a ring, and refreshes on folder changes
+  and every 15 seconds. It never writes to the repository.
+- The Files / Changes / Git Graph buttons show the panel for that space and remember it per
   space; clicking the active one closes the panel.
 - The sidebar folds to a 76px rail (44px off macOS) when narrower than 160px;
   the search button and the footer labels disappear.
@@ -59,7 +71,7 @@ on the right and edits files in a code pane beside the terminals.
   (column, `resizable: false`) holding `tabs` (42px, `window_drag`), `work-body`
   (row, padding 8, gap 8) and `status` (28px). `work-body` holds `main` — the
   `tab: "active"` block with its pane frame — and `panel`, a column holding the
-  `panel-body` stack whose children are `files` and `changes`.
+  `panel-body` stack whose children are `files`, `changes` and `gitgraph`.
 - `mods/mayonaka-chrome/` — a clone of the shipped `workspace-chrome`, used twice
   with `props.footer`: without it the rail (`mods/mayonaka-chrome/*.svg` icons,
   `run("mod.open", {name: "picker"})`), with it the two footer rows
@@ -75,14 +87,23 @@ on the right and edits files in a code pane beside the terminals.
   `TextView.markdown` from `gpui-base`, `readTextFile` / `writeTextFile` with the
   expected text, `watchFolder` to reload on outside changes, `nextCommand()` for
   save and preview toggles, `notify` for refused saves.
+- `mods/mayonaka-gitgraph/` — `exec("git", ["log", "--branches", "--remotes",
+  "--tags", "HEAD", ...])` with the same no-lock read flags as Changes, `status`
+  and `remote`; lanes are laid out in JS and drawn per row with
+  `window.paint_path(PathBuilder.stroke(1.5)...)` layers; `v_virtual_list` keeps
+  only the visible rows built; `watchFolder` triggers refreshes.
+- `mods/mayonaka-tabs/` — a `mod.clone` of the shipped `tabs`; the only change is
+  the *Git Graph* button, shown when the layout's `panel-body` has a `gitgraph`
+  child.
 - `keys.json` — `mod:mayonaka-editor`: `cmd-s` save, `cmd-shift-v` preview toggle.
   Merge into yours; don't replace keys you already use.
-- Shipped mods it uses: `spaces`, `agents`, `tabs`, `pane`, `changes`,
+- Shipped mods it uses: `spaces`, `agents`, `pane`, `changes`, `files` and
+  `workspace-chrome` (icons only),
   `workspace-status`, `picker`, `machine-add`, `toast`, `menu`.
 
 ## Watch out
 
-- The three mods carry no `gpui-kit.d.ts` / `jsconfig.json`: Herdr writes those
+- The mods carry no `gpui-kit.d.ts` / `jsconfig.json`: Herdr writes those
   on first load.
 - `mayonaka-files` and `mayonaka-editor` talk through the shared keys
   `mayonaka-editor.ids` / `.files` / `.open`. Rename one side and the editor pane
@@ -99,10 +120,11 @@ on the right and edits files in a code pane beside the terminals.
 
 ## Done when
 
-- `herdr-app check mods/mayonaka-chrome`, `... mayonaka-files`, `... mayonaka-editor`
-  each pass.
+- `herdr-app check` passes for each folder under `mods/`.
 - With the layout switched to, the window shows the rail, the lists, the tab bar,
   the card-framed terminal and the status bar, with no errors in
   `herdr-app status`.
 - Clicking a file in the Files panel splits a code pane showing that file; clicking
   another file retargets it; ⌘S on an edited file writes it and the dot disappears.
+- The Git Graph button opens a lane graph of the focused pane's repository; clicking
+  a commit lists its changed files.
