@@ -1,0 +1,108 @@
+# Mayonaka
+
+A dark, quiet Herdr workspace: a slim rail sidebar with your spaces and agents,
+tab pills across the top, and terminals as rounded cards. A Files panel opens
+on the right and edits files in a code pane beside the terminals.
+
+![Mayonaka](preview.png)
+
+## What you see
+
+- **Sidebar, left, 268px** (`background: chrome`, never draggable): three stacked
+  parts. A 46px rail with the macOS traffic lights on its left and a search button
+  on its right; the spaces list and the agents list below it, sharing the height
+  evenly, 90px minimum each; a 69px footer holding *Settings* (with a dot when an
+  update is ready) and *Add machine*, separated by a 1px top border.
+- **Tab bar, 42px** across the top of the work area: the shipped `tabs` mod —
+  tab pills, a `+` menu, and the *Files* / *Changes* buttons on the right.
+- **Main, the rest**: the shown tab's terminals, each as a card with a 10px radius,
+  1px `border` (an `accent` border while focused), an 8px gap between panes, and a
+  30px pane header that is always visible. Single-pane tabs are framed too.
+  The area around the cards has 8px padding and an 8px gap.
+- **Files panel, right, 368px** (`min` 280, `max` 900, closed until you open it):
+  a stack of two panels, *Files* (`mayonaka-files`) and *Changes* (the shipped
+  `changes`). *Files* lists the focused pane's folder in 28px rows — chevron,
+  folder or file glyph, name, and a one-letter git mark (`M` `A` `D` `U`) — with a
+  42px header showing the folder or the open file's name.
+- **Status bar, bottom, 28px**: the shipped `workspace-status`.
+- Look: 10px radius cards on a `canvas` background, terminal padding 14px vertical
+  by 12px horizontal, no system title bar (the layout draws its own), macOS window
+  buttons at `[12, 16]`. Type and colors come from `settings.json`, else Herdr's.
+
+## How it behaves
+
+- Agent and space status in the lists, tab pills and status bar is the shipped
+  behaviour: working spins, blocked and done show a dot in `blocked` / `done`.
+- **Search** in the rail opens the shipped `picker`. **Settings** opens
+  `app.settings`; **Add machine** opens the `machine-add` dialog.
+- **Files**: click a folder to expand it, click a file to open it in a
+  `mayonaka-editor` pane split to the right (⌘-click always makes a new pane;
+  a plain click retargets the editor pane already in this tab). A file with
+  unsaved edits is never silently replaced — the first click warns in a toast,
+  the second discards. Files refresh on a 10 second timer and on folder changes;
+  the tree is capped at 500 entries per folder and 5,000 in total.
+- **Editor**: markdown opens as rendered preview, everything else as source;
+  the eye / code buttons in its 34px header switch. `⌘S` saves, `⌘V`-style paste
+  and undo are the editor's own. Files over 1 MiB and binaries are refused.
+  Remote spaces are read-only (the pane gets its file through `exec --on`).
+- The Files / Changes buttons show the panel for that space and remember it per
+  space; clicking the active one closes the panel.
+- The sidebar folds to a 76px rail (44px off macOS) when narrower than 160px;
+  the search button and the footer labels disappear.
+
+## Built from
+
+- `layouts/mayonaka.json` — root `row`, no `theme` (yours applies), `titlebar:
+  none`, `traffic_lights: [12, 16]`, `terminal_padding: [14, 12]`, root
+  `background: canvas` and a 1px `border` divider. Children: `sidebar` (column,
+  268px, min 44, max 480, `resizable: false`, `background: chrome`), then `work`
+  (column, `resizable: false`) holding `tabs` (42px, `window_drag`), `work-body`
+  (row, padding 8, gap 8) and `status` (28px). `work-body` holds `main` — the
+  `tab: "active"` block with its pane frame — and `panel`, a column holding the
+  `panel-body` stack whose children are `files` and `changes`.
+- `mods/mayonaka-chrome/` — a clone of the shipped `workspace-chrome`, used twice
+  with `props.footer`: without it the rail (`mods/mayonaka-chrome/*.svg` icons,
+  `run("mod.open", {name: "picker"})`), with it the two footer rows
+  (`run("app.settings")`, `run("mod.open", {name: "machine-add"})`). It reads
+  `layout()` for the sidebar's width and calls `layout.resize` + `shared` to fold.
+- `mods/mayonaka-files/` — a clone of the shipped `files` extended with the
+  editor integration: `panes()` to find this tab's editor panes,
+  `shared("mayonaka-editor.ids")`, `shared("mayonaka-editor.open")`, and
+  `run("pane.split", {mod: "mayonaka-editor", ...})`. Tree listing and git marks
+  are the shipped code: `exec("sh", ...)` or PowerShell, `exec("git", ...) status
+  --porcelain -z`, `watchFolder`, `readTextFile`.
+- `mods/mayonaka-editor/` — the editor pane: `EditorState` / `Editor` and
+  `TextView.markdown` from `gpui-base`, `readTextFile` / `writeTextFile` with the
+  expected text, `watchFolder` to reload on outside changes, `nextCommand()` for
+  save and preview toggles, `notify` for refused saves.
+- `keys.json` — `mod:mayonaka-editor`: `cmd-s` save, `cmd-shift-v` preview toggle.
+  Merge into yours; don't replace keys you already use.
+- Shipped mods it uses: `spaces`, `agents`, `tabs`, `pane`, `changes`,
+  `workspace-status`, `picker`, `machine-add`, `toast`, `menu`.
+
+## Watch out
+
+- The three mods carry no `gpui-kit.d.ts` / `jsconfig.json`: Herdr writes those
+  on first load.
+- `mayonaka-files` and `mayonaka-editor` talk through the shared keys
+  `mayonaka-editor.ids` / `.files` / `.open`. Rename one side and the editor pane
+  stops following the panel.
+- `mayonaka-editor` writes files, but only where you run Herdr and only in the
+  folder you opened; remote panes are read-only by design.
+- `mayonaka-chrome` reads the node id `sidebar`: a different layout with no
+  `sidebar` node keeps it wide.
+- The rail reserves room for the macOS traffic lights; on Linux and Windows the
+  layout draws nothing there, so the rail starts 14px in with an empty left side.
+- The panel is closed in the shipped layout (`"hidden": true`). Opening it is the
+  Files button's job.
+- `preview.png` is a drawing of the layout, not a screenshot of a running app.
+
+## Done when
+
+- `herdr-app check mods/mayonaka-chrome`, `... mayonaka-files`, `... mayonaka-editor`
+  each pass.
+- With the layout switched to, the window shows the rail, the lists, the tab bar,
+  the card-framed terminal and the status bar, with no errors in
+  `herdr-app status`.
+- Clicking a file in the Files panel splits a code pane showing that file; clicking
+  another file retargets it; ⌘S on an edited file writes it and the dot disappears.
