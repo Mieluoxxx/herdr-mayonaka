@@ -48,9 +48,23 @@ Changes and a Git Graph of every branch.
   the second discards. Files refresh on a 10 second timer and on folder changes;
   the tree is capped at 500 entries per folder and 5,000 in total.
 - **Editor**: markdown opens as rendered preview, everything else as source;
-  the eye / code buttons in its 34px header switch. `⌘S` saves, `⌘V`-style paste
-  and undo are the editor's own. Files over 1 MiB and binaries are refused.
-  Remote spaces are read-only (the pane gets its file through `exec --on`).
+  the eye / code buttons in its 34px header switch. The preview is editable one
+  block at a time (a list one item at a time, nested items included), and stays
+  rendered while you type: heading, quote, list and
+  task markers show as a heading badge, quote bars, bullets, numbers and boxes;
+  bold, italic, strikethrough, inline code, links and images show as such the
+  moment their closing mark is typed. Click a mark to see and edit its markdown
+  (it folds again once you type elsewhere), click a task box to tick it,
+  Backspace after a marker turns the line back into text. Return in a list or
+  quote starts the next item, Return on an empty item ends it. Code blocks,
+  tables and front matter edit as source. A press outside the block, `Esc`, a
+  save or a mode switch writes it back. A blank line typed inside a block splits
+  it, an emptied block disappears, and clicking below the last block adds a new
+  one. Undo works inside the open block only. Hard line breaks in the file stay
+  line breaks while a block is open. `⌘S` saves,
+  `⌘V`-style paste and undo are the editor's own. Files over 1 MiB and binaries
+  are refused. Remote spaces are read-only (the pane gets its file through
+  `exec --on`) and their preview is not editable.
 - **Git Graph**: click a commit to see its full message, author, date, parents
   and changed files below the list; click it again to close. Clicking the
   *Uncommitted Changes* row offers *Open in Changes*. It follows the focused
@@ -84,7 +98,12 @@ Changes and a Git Graph of every branch.
   are the shipped code: `exec("sh", ...)` or PowerShell, `exec("git", ...) status
   --porcelain -z`, `watchFolder`, `readTextFile`.
 - `mods/mayonaka-editor/` — the editor pane: `EditorState` / `Editor` and
-  `TextView.markdown` from `gpui-base`, `readTextFile` / `writeTextFile` with the
+  `TextView.markdown` from `gpui-base`, one `TextView.markdown` per block of
+  `blocks.js` (a line-based splitter that keeps each block's source offsets) and a
+  `TextareaState` for the block being edited, closed by `on_mouse_down_out`; in it
+  `inline.js` turns markers and inline marks into `.token(...)` spans with
+  `replace_range_with_token` (never `set_value`, which lands a frame late and
+  would drop keystrokes) and `on_token_click` opens or ticks them, `readTextFile` / `writeTextFile` with the
   expected text, `watchFolder` to reload on outside changes, `nextCommand()` for
   save and preview toggles, `notify` for refused saves.
 - `mods/mayonaka-gitgraph/` — `exec("git", ["log", "--branches", "--remotes",
