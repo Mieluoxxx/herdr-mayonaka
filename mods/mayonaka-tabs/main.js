@@ -77,7 +77,7 @@ export default class Tabs extends View {
       ? Math.max(10, (root.traffic_lights[0] + 64) / settings().zoom - (sidebar?.hidden ? 0 : sidebar?.size?.px ?? 0))
       : 10;
     const panel = find(root, "panel"), body = find(root, "panel-body");
-    // Git Graph isn't one of Herdr's panels, so the welcome's choice never lists it:
+    // Graph isn't one of Herdr's panels, so the welcome's choice never lists it:
     // the button follows the layout having the block.
     const graph = body?.children?.some(c => c.id === "gitgraph") ? ["gitgraph"] : [];
     const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), ...graph];
@@ -99,7 +99,7 @@ export default class Tabs extends View {
       .child(button("tab-new", "+", () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 })))
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
-      .when(enabled.includes("gitgraph"), el => el.child(panelButton("gitgraph", "Git Graph", "mods/mayonaka-gitgraph/git-graph.svg")))
+      .when(enabled.includes("gitgraph"), el => el.child(panelButton("gitgraph", "Graph", "mods/mayonaka-gitgraph/git-graph.svg")))
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/mayonaka-tabs/win-min.svg").size(16) : "−", () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/mayonaka-tabs/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
         .child(button("close-window", w.platform === "windows" ? svg("mods/mayonaka-tabs/win-close.svg").size(16) : svg("mods/pane/close.svg").size(13), () => run("window.close"))));

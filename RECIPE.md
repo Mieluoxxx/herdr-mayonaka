@@ -3,7 +3,7 @@
 A dark, quiet Herdr workspace: a slim rail sidebar with your spaces and agents,
 tab pills across the top, and terminals as rounded cards. A Files panel opens
 on the right and edits files in a code pane beside the terminals; next to it,
-Changes and a Git Graph of every branch.
+Changes and a Graph of every branch.
 
 ![Mayonaka](preview.png)
 
@@ -16,16 +16,16 @@ Changes and a Git Graph of every branch.
   update is ready) and *Add machine*, separated by a 1px top border.
 - **Tab bar, 42px** across the top of the work area: `mayonaka-tabs`, the shipped
   `tabs` with one more button — tab pills, a `+` menu, and the *Files* /
-  *Changes* / *Git Graph* buttons on the right.
+  *Changes* / *Graph* buttons on the right.
 - **Main, the rest**: the shown tab's terminals, each as a card with a 10px radius,
   1px `border` (an `accent` border while focused), an 8px gap between panes, and a
   30px pane header that is always visible. Single-pane tabs are framed too.
   The area around the cards has 8px padding and an 8px gap.
 - **Files panel, right, 368px** (`min` 280, `max` 900, closed until you open it):
   a stack of three panels, *Files* (`mayonaka-files`), *Changes* (the shipped
-  `changes`) and *Git Graph* (`mayonaka-gitgraph`). *Files* lists the focused pane's folder in 28px rows — chevron,
+  `changes`) and *Graph* (`mayonaka-gitgraph`). *Files* lists the focused pane's folder in 28px rows — chevron,
   folder or file glyph, name, and a one-letter git mark (`M` `A` `D` `U`) — with a
-  42px header showing the folder or the open file's name. *Git Graph* draws the
+  42px header showing the folder or the open file's name. *Graph* draws the
   repository's local branches, remote branches and tags as colored lanes in 24px
   rows — the graph, ref pills (`HEAD → main · origin`, `◆ tag`), the subject, the
   short SHA and the date — with an *Uncommitted Changes* row on top when the
@@ -65,13 +65,13 @@ Changes and a Git Graph of every branch.
   `⌘V`-style paste and undo are the editor's own. Files over 1 MiB and binaries
   are refused. Remote spaces are read-only (the pane gets its file through
   `exec --on`) and their preview is not editable.
-- **Git Graph**: click a commit to see its full message, author, date, parents
+- **Graph**: click a commit to see its full message, author, date, parents
   and changed files below the list; click it again to close. Clicking the
   *Uncommitted Changes* row offers *Open in Changes*. It follows the focused
   pane's repository like Changes, shows the newest 600 commits (`--date-order`),
   merges as hollow dots and HEAD with a ring, and refreshes on folder changes
   and every 15 seconds. It never writes to the repository.
-- The Files / Changes / Git Graph buttons show the panel for that space and remember it per
+- The Files / Changes / Graph buttons show the panel for that space and remember it per
   space; clicking the active one closes the panel.
 - The sidebar folds to a 76px rail (44px off macOS) when narrower than 160px;
   the search button and the footer labels disappear.
@@ -112,7 +112,7 @@ Changes and a Git Graph of every branch.
   `window.paint_path(PathBuilder.stroke(1.5)...)` layers; `v_virtual_list` keeps
   only the visible rows built; `watchFolder` triggers refreshes.
 - `mods/mayonaka-tabs/` — a `mod.clone` of the shipped `tabs`; the only change is
-  the *Git Graph* button, shown when the layout's `panel-body` has a `gitgraph`
+  the *Graph* button, shown when the layout's `panel-body` has a `gitgraph`
   child.
 - `keys.json` — `mod:mayonaka-editor`: `cmd-s` save, `cmd-shift-v` preview toggle.
   Merge into yours; don't replace keys you already use.
@@ -145,5 +145,5 @@ Changes and a Git Graph of every branch.
   `herdr-app status`.
 - Clicking a file in the Files panel splits a code pane showing that file; clicking
   another file retargets it; ⌘S on an edited file writes it and the dot disappears.
-- The Git Graph button opens a lane graph of the focused pane's repository; clicking
+- The Graph button opens a lane graph of the focused pane's repository; clicking
   a commit lists its changed files.

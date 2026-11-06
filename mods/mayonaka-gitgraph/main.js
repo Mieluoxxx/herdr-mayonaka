@@ -271,7 +271,7 @@ export default class GitGraph extends View {
     const branch = this.rows.flatMap(r => r.refs).find(r => r.kind === "head");
     return v_flex().id("gitgraph").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(12)
       .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
-        .child(div().text_size(13).font_semibold().child("Git Graph"))
+        .child(div().text_size(13).font_semibold().child("Graph"))
         .when(Boolean(branch), el => el.child(div().min_w(0).truncate().text_size(11).text_color(t.muted).child(branch.name)))
         .child(div().flex_1())
         .child(div().px(5).py(1).rounded(4).border_1().border_color(t.border).text_size(10).text_color(t.muted).child(`${count}${this.limited ? "+" : ""} ${count === 1 ? "commit" : "commits"}`)))
