@@ -1,5 +1,6 @@
 // A lazy file browser for the focused pane's folder. Files open in an editor pane beside the terminals (⌘-click: a new split).
 // Right-click opens mods/mayonaka-files-menu, which hands the chosen action back through shared("mayonaka-files.action").
+// Dragging a row opens mods/mayonaka-files-drag; dropping it on a terminal pane types the path there.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
 import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run, shared, setShared, openOverlay, notify } from "herdr";
@@ -23,6 +24,7 @@ const ACTION = "mayonaka-files.action";
 const join = (root, path) => (path ? `${root}/${path}` : root);
 const parentOf = (path) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
 const baseName = (path) => path.split(/[\\/]/).pop();
+const shellQuote = (path) => (/^[\w@%+=:,./~-]+$/.test(path) ? path : `'${path.replace(/'/g, "'\\''")}'`);
 
 // One file operation, on the pane's machine. Windows here has no sh, so it goes through PowerShell like the listing does.
 async function fsop(kind, a, b, on) {
@@ -230,6 +232,23 @@ export default class Files extends View {
     return items;
   }
 
+  dragFrom(e) {
+    const p = this.press;
+    if (!p || Math.hypot(e.position.x - p.x, e.position.y - p.y) < 6) return;
+    this.press = null;
+    openOverlay({ mod: "mayonaka-files-drag", kind: "window", frame: "none", width: 1, height: 1, at: { x: 0, y: 0 },
+      props: { panel: this.panelId, path: p.path, dir: p.dir, name: baseName(p.path), x: e.position.x, y: e.position.y } });
+  }
+
+  // No command types text into a terminal without Enter, so the path goes through the clipboard, which is then put back.
+  drop(pane, path, cx) {
+    const pasted = shellQuote(join(this.root, path)) + " ", before = cx.read_from_clipboard();
+    cx.write_to_clipboard(pasted);
+    run("pane.focus", { pane });
+    run("terminal.paste");
+    cx.timer.after(400, cx => { if (before !== undefined && cx.read_from_clipboard() === pasted) cx.write_to_clipboard(before); });
+  }
+
   openMenu(path, dir) {
     const items = this.menuItems(path, dir);
     const height = 10 + items.length * 31 + items.filter(i => i.sep).length * 9;
@@ -238,12 +257,13 @@ export default class Files extends View {
   }
 
   // Runs what the menu chose. File work happens here, where the tree, its folders and the editor link live.
-  perform({ action, path, name }, cx) {
+  perform({ action, path, name, pane }, cx) {
     const root = this.root, on = this.on, context = this.context, abs = join(root, path);
     const fail = (title, e) => notify({ title, body: String(e?.message ?? e), level: "error" });
     const platform = window()?.platform;
     switch (action) {
       case "open": return this.openFile(path, false);
+      case "drop": return this.drop(pane, path, cx);
       case "refresh": return this.refresh(cx);
       case "copy-path":
       case "copy-relative":
@@ -294,6 +314,8 @@ export default class Files extends View {
         .when(!entry.dir && opened === `${this.root}/${path}`, el => el.bg(t.selected))
         .on_click((e, cx) => entry.dir ? this.toggle(path, cx) : this.openFile(path, e.modifiers.platform))
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.openMenu(path, entry.dir); })
+        .on_mouse_down("left", e => { this.press = { path, dir: entry.dir, x: e.position.x, y: e.position.y }; })
+        .on_mouse_move(e => this.dragFrom(e))
         .child(entry.dir ? svg(`mods/mayonaka-files/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
         .child(svg(`mods/mayonaka-files/${entry.dir ? "folder" : "file"}.svg`).size(14).flex_none().text_color(t.muted))
         .child(div().flex_1().min_w(0).truncate().child(entry.name))
@@ -318,6 +340,9 @@ export default class Files extends View {
         .child(div().flex_1().min_w(0).truncate().text_right().text_size(12).text_color(t.dim).child(this.file ?? this.root?.split(/[\\/]/).pop() ?? "")))
       .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6)
         .on_mouse_down("right", (_e, cx) => { if (this.root) { cx.stop_propagation(); this.openMenu("", true); } })
+        // There is no "button still held" on a move, so a press that leaves the tree or comes up is forgotten.
+        .on_mouse_up("left", () => { this.press = null; })
+        .on_hover(hovered => { if (!hovered) this.press = null; })
         .children(this.rows("", 0, [], t))
         .when(Boolean(this.error) || !this.entries.get("")?.length, el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))
         .when(this.limited, el => el.child(div().p(8).text_size(11).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total")))))

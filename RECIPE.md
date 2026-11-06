@@ -56,6 +56,11 @@ Changes and a Graph of every branch.
   first and moves to the Trash on macOS (`trash`, else Finder); on Linux, Windows
   and other machines it deletes permanently, and says so. A new file opens in the
   editor. Default app and Reveal are hidden in remote spaces.
+- **Drag a file or folder** out of Files onto a terminal pane to type its path
+  there (shell-quoted, with a trailing space, no Enter). A label follows the
+  pointer and the target pane's header lights up in `accent`; Esc or a drop
+  anywhere else cancels. It goes through the clipboard, which gets its text back
+  right after.
 - **Editor**: markdown opens as rendered preview, everything else as source;
   the eye / code buttons in its 34px header switch. The preview is editable one
   block at a time (a list one item at a time, nested items included), and stays
@@ -125,6 +130,16 @@ Changes and a Graph of every branch.
   It only asks: the choice goes back as `setShared("mayonaka-files.action", {panel,
   action, path, name, n})` and `mayonaka-files` does the work with `exec` (`sh`, or
   PowerShell on Windows), `cx.write_to_clipboard` and `notify`.
+- `mods/mayonaka-files-drag/` — the drag: a transparent `kind: "window"`,
+  `frame: "none"` overlay over the whole window, opened when a pressed row moves
+  6px, that takes the rest of the gesture. On release it posts `{action:
+  "drop", pane}` and the panel runs `cx.write_to_clipboard`, `pane.focus` and
+  `terminal.paste`, then restores the clipboard.
+- `mods/mayonaka-pane/` — a `mod.clone` of the shipped `pane` header. Herdr gives
+  mods no pane geometry, so on every press (`on_mouse_down_out` carries the
+  element's `bounds`) each header writes where it is to
+  `shared("mayonaka-pane.rects")`; the drag picks the pane whose header is the
+  nearest above the pointer across its width.
 - `mods/mayonaka-gitgraph/` — `exec("git", ["log", "--branches", "--remotes",
   "--tags", "HEAD", ...])` with the same no-lock read flags as Changes, `status`
   and `remote`; lanes are laid out in JS and drawn per row with
@@ -135,7 +150,7 @@ Changes and a Graph of every branch.
   child.
 - `keys.json` — `mod:mayonaka-editor`: `cmd-s` save, `cmd-shift-v` preview toggle.
   Merge into yours; don't replace keys you already use.
-- Shipped mods it uses: `spaces`, `agents`, `pane`, `changes`, `files` and
+- Shipped mods it uses: `spaces`, `agents`, `changes`, `files` and
   `workspace-chrome` (icons only),
   `workspace-status`, `picker`, `machine-add`, `toast`, `menu`.
 

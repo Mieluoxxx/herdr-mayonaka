@@ -99,7 +99,7 @@
                 "pane": {
                   "header": {
                     "content": {
-                      "mod": "pane"
+                      "mod": "mayonaka-pane"
                     },
                     "reveal": "always",
                     "height": 30,
