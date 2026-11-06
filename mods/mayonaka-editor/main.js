@@ -1,15 +1,27 @@
 // A file editor pane, opened beside the terminals by mayonaka-files: pane.split {mod: "mayonaka-editor", props: {id, file, on, root}}.
 // mayonaka-files retargets an open editor through shared("mayonaka-editor.open") instead of splitting again.
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState, TextView, Textarea, TextareaState } from "gpui-base";
 import { splitBlocks, refDefs, replaceBlock, appendBlock, itemMarkdown, itemNumbers } from "./blocks.js";
 import { tokenize, blockMode, diff, continueLine, parseMarker, toggleTask } from "./inline.js";
-import { props, shared, setShared, readTextFile, writeTextFile, watchFolder, exec, notify, nextCommand, theme, settings } from "herdr";
+import { imageSize, formatBytes } from "./image.js";
+import { props, shared, setShared, readTextFile, writeTextFile, watchFolder, exec, notify, nextCommand, theme, settings, appHome } from "herdr";
+import { readFile, writeFile, readdir, mkdir, unlink } from "fs/promises";
+import { createHash } from "crypto";
+import { Buffer } from "buffer";
 
 const LANG = { ts: "js", tsx: "js", mts: "js", cts: "js", jsx: "js", mjs: "js", cjs: "js", toml: "yaml", yml: "yaml", jsonc: "json", svelte: "html", vue: "html", md: "markdown", markdown: "markdown", py: "python", rs: "rust", sh: "bash", zsh: "bash" };
 const MAX = 1024 * 1024;
 const HEADING = { 1: 30, 2: 23, 3: 19, 4: 17, 5: 15, 6: 14 };
 const isMarkdown = (f) => /\.(md|markdown|mdx)$/i.test(f ?? "");
+const isSvg = (f) => /\.svg$/i.test(f ?? "");
+const isImage = (f) => /\.(png|jpe?g|gif|webp|bmp|ico|tiff?|svg)$/i.test(f ?? "");
+const hasPreview = (f) => isMarkdown(f) || isSvg(f);
+// image() only loads files under the app's folder (not absolute paths, not symlinks out of it), so images are copied here.
+const CACHE = "cache/mayonaka-editor";
+const MAX_IMAGE = 32 * 1024 * 1024;
+// exec output is capped at 8 MiB and base64 grows by a third.
+const MAX_REMOTE_IMAGE = 6 * 1024 * 1024;
 const dirname = (f) => f.slice(0, f.lastIndexOf("/")) || "/";
 
 function resolve(base, rel) {
@@ -30,7 +42,7 @@ export default class EditorPane extends View {
       for (;;) {
         const c = await nextCommand();
         if (c === "save") await this.save(cx);
-        else if (c === "toggle" && isMarkdown(this.file)) { this.commit(); this.mode = this.mode === "preview" ? "source" : "preview"; }
+        else if (c === "toggle" && hasPreview(this.file)) { this.commit(); this.mode = this.mode === "preview" ? "source" : "preview"; }
         cx.notify();
       }
     });
@@ -47,7 +59,8 @@ export default class EditorPane extends View {
     if (this.discardAsked && this.discardAsked !== file) { this.discardAsked = null; return; }
     this.discardAsked = null;
     this.state?.release(); this.state = null;
-    Object.assign(this, { file, on, root, original: null, dirty: false, error: null, mode: isMarkdown(file) ? "preview" : "source" });
+    if (!isImage(file)) this.dropImage();
+    Object.assign(this, { file, on, root, original: null, dirty: false, error: null, imageError: null, mode: isMarkdown(file) || isImage(file) ? "preview" : "source" });
     if (this.id) setShared("mayonaka-editor.files", { ...(shared("mayonaka-editor.files") ?? {}), [this.id]: { file, on, root } });
     this.load(cx);
     this.watch(cx);
@@ -55,6 +68,7 @@ export default class EditorPane extends View {
 
   load(cx) {
     const file = this.file;
+    if (isImage(file)) { this.loadImage(cx); if (!isSvg(file)) return; }
     cx.spawn(async (cx) => {
       try {
         const text = await readTextFile(file, { on: this.on });
@@ -76,6 +90,49 @@ export default class EditorPane extends View {
       } catch { if (this.file === file) this.error = "Cannot open this file (too large, over 1 MiB, or unreadable)"; }
       finally { cx.notify(); }
     });
+  }
+
+  loadImage(cx) {
+    const file = this.file, on = this.on;
+    cx.spawn(async (cx) => {
+      try {
+        const max = on ? MAX_REMOTE_IMAGE : MAX_IMAGE;
+        const size = await exec("sh", ["-c", 'wc -c < "$1"', "size", file], { on }).catch(() => null);
+        if (size?.code === 0 && Number(size.stdout.trim()) > max) throw new Error(`Image over ${formatBytes(max)} · not previewed`);
+        const viaExec = async () => {
+          const r = await exec("sh", ["-c", 'base64 < "$1"', "base64", file], { on });
+          if (r.code !== 0) throw new Error(r.stderr.trim() || "This file is no longer available");
+          return Buffer.from(r.stdout.replace(/\s+/g, ""), "base64");
+        };
+        // fs only reads under the home folder; elsewhere (/tmp, other volumes) the bytes come through exec, with its 8 MiB cap.
+        let bytes;
+        try { bytes = on ? await viaExec() : await readFile(file); }
+        catch (e) { if (on) throw e; bytes = await viaExec(); }
+        if (this.file !== file) return;
+        if (bytes.length > max) throw new Error(`Image over ${formatBytes(max)} · not previewed`);
+        const ext = file.split(".").pop().toLowerCase(), prefix = `${this.id ?? "pane"}-`;
+        const name = `${prefix}${createHash("sha1").update(bytes).digest("hex").slice(0, 16)}.${ext}`;
+        const dir = `${appHome()}/${CACHE}`;
+        await mkdir(dir, { recursive: true });
+        // Content-addressed, so an edited image gets a new path instead of the loader's cached pixels.
+        for (const old of await readdir(dir).catch(() => [])) if (old.startsWith(prefix) && old !== name) await unlink(`${dir}/${old}`).catch(() => {});
+        await writeFile(`${dir}/${name}`, bytes);
+        if (this.file !== file) return;
+        this.image = { file, path: `${CACHE}/${name}`, bytes: bytes.length, ...(imageSize(bytes) ?? {}) };
+        this.imageError = null;
+      } catch (e) { if (this.file === file) this.imageError = String(e?.message ?? e); }
+      finally { cx.notify(); }
+    });
+  }
+
+  dropImage() {
+    const path = this.image?.path;
+    this.image = null;
+    if (path) unlink(`${appHome()}/${path}`).catch(() => {});
+  }
+
+  async close() {
+    this.dropImage();
   }
 
   watch(cx) {
@@ -333,7 +390,24 @@ export default class EditorPane extends View {
     return out;
   }
 
+  imageBody(t) {
+    if (this.imageError) return div().p(16).text_color(t.dim).child(this.imageError);
+    if (this.image?.file !== this.file) return div().p(16).text_color(t.dim).child("Loading…");
+    const { path, width, height, bytes } = this.image, box = this.box;
+    const scale = width && height && box ? Math.min(1, (box.width - 32) / width, (box.height - 32) / height) : null;
+    const pic = scale ? image(path).flex_none().w(Math.max(1, width * scale)).h(Math.max(1, height * scale)) : image(path).size_full();
+    const info = [width && height ? `${width} × ${height}` : null, formatBytes(bytes), scale ? `${Math.round(scale * 100)}%` : null].filter(Boolean).join(" · ");
+    return v_flex().flex_1().min_h(0)
+      .child(v_flex().id("image").flex_1().min_h(0).overflow_hidden().items_center().justify_center().bg(t.canvas)
+        .on_size_change((size, cx) => {
+          if (size.width !== this.box?.width || size.height !== this.box?.height) { this.box = size; cx.notify(); }
+        })
+        .child(pic))
+      .child(h_flex().h(26).flex_none().px(12).items_center().justify_end().border_t(1).border_color(t.border).text_size(11.5).text_color(t.dim).child(info));
+  }
+
   body(t) {
+    if (isImage(this.file) && (this.mode === "preview" || !isSvg(this.file))) return this.imageBody(t);
     if (this.error) return div().p(16).text_color(t.dim).child(this.error);
     if (!this.state) return div().p(16).text_color(t.dim).child("Loading…");
     if (this.mode === "preview") {
@@ -357,7 +431,7 @@ export default class EditorPane extends View {
         .child(h_flex().flex_1().min_w(0).gap(6).items_center().overflow_hidden().children(this.crumbs(t)))
         .when(this.dirty || this.pending, (el) => el.child(div().flex_none().size(7).rounded(4).bg(t.accent)))
         .when(Boolean(this.on), (el) => el.child(div().flex_none().text_color(t.dim).child("read-only")))
-        .when(isMarkdown(this.file), (el) => el.child(h_flex().flex_none().gap(2).p(2).rounded(7).bg(t.surface)
+        .when(hasPreview(this.file), (el) => el.child(h_flex().flex_none().gap(2).p(2).rounded(7).bg(t.surface)
           .child(this.toggle(t, "preview", "eye")).child(this.toggle(t, "source", "code")))))
       .child(this.body(t));
   }

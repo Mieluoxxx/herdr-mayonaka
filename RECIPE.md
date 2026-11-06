@@ -63,8 +63,12 @@ Changes and a Graph of every branch.
   one. Undo works inside the open block only. Hard line breaks in the file stay
   line breaks while a block is open. `⌘S` saves,
   `⌘V`-style paste and undo are the editor's own. Files over 1 MiB and binaries
-  are refused. Remote spaces are read-only (the pane gets its file through
-  `exec --on`) and their preview is not editable.
+  are refused. **Images** (png, jpg, gif, webp, bmp, ico, tiff, svg) open as a
+  picture fitted to the pane, never scaled up, with its size, file size and zoom
+  in a 26px footer; svg also has the eye / code switch to edit its source. Images
+  are previewed up to 32 MiB, 6 MiB from another machine. Remote spaces are
+  read-only (the pane gets its file through `exec --on`) and their preview is
+  not editable.
 - **Graph**: click a commit to see its full message, author, date, parents
   and changed files below the list; click it again to close. Clicking the
   *Uncommitted Changes* row offers *Open in Changes*. It follows the focused
@@ -127,6 +131,11 @@ Changes and a Graph of every branch.
 - `mayonaka-files` and `mayonaka-editor` talk through the shared keys
   `mayonaka-editor.ids` / `.files` / `.open`. Rename one side and the editor pane
   stops following the panel.
+- `image()` only loads files under `~/.config/herdr-app` (not absolute paths, not
+  symlinks out of it), so the editor copies an image to
+  `~/.config/herdr-app/cache/mayonaka-editor/<pane id>-<sha1>.<ext>` and removes
+  it when the pane shows another file or closes. `fs` reads only under the home
+  folder; images elsewhere come through `exec("sh", ["-c", "base64 < …"])`.
 - `mayonaka-editor` writes files, but only where you run Herdr and only in the
   folder you opened; remote panes are read-only by design.
 - `mayonaka-chrome` reads the node id `sidebar`: a different layout with no
