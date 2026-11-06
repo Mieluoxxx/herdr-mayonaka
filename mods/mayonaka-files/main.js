@@ -1,7 +1,8 @@
 // A lazy file browser for the focused pane's folder. Files open in an editor pane beside the terminals (⌘-click: a new split).
+// Right-click opens mods/mayonaka-files-menu, which hands the chosen action back through shared("mayonaka-files.action").
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run, shared, setShared } from "herdr";
+import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run, shared, setShared, openOverlay, notify } from "herdr";
 
 let last = null;
 function location() {
@@ -17,6 +18,37 @@ const editorIds = () => shared("mayonaka-editor.ids") ?? {};
 const key = () => JSON.stringify(location());
 const LANG = { ts: "js", tsx: "js", mts: "js", cts: "js", jsx: "js", mjs: "js", toml: "yaml", jsonc: "json", svelte: "html", vue: "html" };
 const PER_FOLDER = 500, TOTAL = 5000;
+const ACTION = "mayonaka-files.action";
+
+const join = (root, path) => (path ? `${root}/${path}` : root);
+const parentOf = (path) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
+const baseName = (path) => path.split(/[\\/]/).pop();
+
+// One file operation, on the pane's machine. Windows here has no sh, so it goes through PowerShell like the listing does.
+async function fsop(kind, a, b, on) {
+  if (!on && window()?.platform === "windows") {
+    const q = (p) => "'" + p.replace(/['‘’‚‛]/g, "$&$&") + "'";
+    const ps = {
+      "new-file": `if (Test-Path -LiteralPath ${q(a)}) { throw 'Already exists' }; New-Item -ItemType File -Path ${q(a)} | Out-Null`,
+      "new-folder": `if (Test-Path -LiteralPath ${q(a)}) { throw 'Already exists' }; New-Item -ItemType Directory -Path ${q(a)} | Out-Null`,
+      rename: `if (Test-Path -LiteralPath ${q(b)}) { throw 'Already exists' }; Move-Item -LiteralPath ${q(a)} -Destination ${q(b)}`,
+      delete: `Remove-Item -LiteralPath ${q(a)} -Recurse -Force`,
+    }[kind];
+    const r = await exec("powershell", ["-NoProfile", "-Command", `$ErrorActionPreference = 'Stop'; ${ps}`]);
+    if (r.code !== 0) throw new Error(r.stderr.trim() || "Failed");
+    return;
+  }
+  const exists = 'if [ -e "$1" ] || [ -L "$1" ]; then echo "${1##*/} already exists" >&2; exit 1; fi; ';
+  const sh = {
+    "new-file": exists + ': > "$1"',
+    "new-folder": exists + 'mkdir -- "$1"',
+    rename: 'if [ -e "$2" ] || [ -L "$2" ]; then echo "${2##*/} already exists" >&2; exit 1; fi; mv -- "$1" "$2"',
+    // macOS has /usr/bin/trash since 15; elsewhere, and on other machines, delete means delete.
+    delete: on || window()?.platform !== "macos" ? 'rm -rf -- "$1"' : 'if command -v trash >/dev/null 2>&1; then trash "$1"; else osascript -e \'on run argv\' -e \'tell application "Finder" to delete (POSIX file (item 1 of argv) as alias)\' -e \'end run\' "$1" >/dev/null; fi',
+  }[kind];
+  const r = await exec("sh", ["-c", sh, "files", a, ...(b ? [b] : [])], { on });
+  if (r.code !== 0) throw new Error(r.stderr.trim() || "Failed");
+}
 
 async function directory(path, on) {
   const windowsDirectory = async () => {
@@ -46,6 +78,8 @@ async function directory(path, on) {
 export default class Files extends View {
   init(_props, cx) {
     this.saved = new Map();
+    // shared() is persisted; a fresh id per copy keeps an action from an earlier run or another Files panel from replaying here.
+    this.panelId = `f${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     this.entries = new Map(); this.folders = new Set(); this.pending = new Set(); this.marks = {};
     this.refresh(cx);
     cx.timer.every(10000, cx => this.refresh(cx));
@@ -182,6 +216,75 @@ export default class Files extends View {
     });
   }
 
+  menuItems(path, dir) {
+    const local = !this.on, root = !path, platform = window()?.platform, items = [];
+    const add = (label, action, icon, sep = false, danger = false) => items.push({ label, action, icon, sep: sep && items.length > 0, danger });
+    if (dir) { add("New File…", "new-file", "plus"); add("New Folder…", "new-folder", "folder-plus"); }
+    else add("Open", "open", "file-text");
+    if (local && !dir) add("Open with Default App", "open-default", "external-link", true);
+    if (local) add(platform === "macos" ? "Reveal in Finder" : platform === "windows" ? "Show in Explorer" : "Open Containing Folder", "reveal", "folder", dir);
+    add("Copy Path", "copy-path", "copy", true);
+    if (!root) add("Copy Relative Path", "copy-relative", "copy");
+    if (root) add("Refresh", "refresh", "refresh", true);
+    else { add("Rename…", "rename", "square-pen", true); add("Delete", "delete", "trash", false, true); }
+    return items;
+  }
+
+  openMenu(path, dir) {
+    const items = this.menuItems(path, dir);
+    const height = 10 + items.length * 31 + items.filter(i => i.sep).length * 9;
+    openOverlay({ mod: "mayonaka-files-menu", kind: "popup", width: 236, height,
+      props: { stage: "menu", items, panel: this.panelId, path, dir, name: path ? baseName(path) : baseName(this.root ?? ""), root: baseName(this.root ?? ""), on: this.on } });
+  }
+
+  // Runs what the menu chose. File work happens here, where the tree, its folders and the editor link live.
+  perform({ action, path, name }, cx) {
+    const root = this.root, on = this.on, context = this.context, abs = join(root, path);
+    const fail = (title, e) => notify({ title, body: String(e?.message ?? e), level: "error" });
+    const platform = window()?.platform;
+    switch (action) {
+      case "open": return this.openFile(path, false);
+      case "refresh": return this.refresh(cx);
+      case "copy-path":
+      case "copy-relative":
+        cx.write_to_clipboard(action === "copy-path" ? abs : path);
+        notify({ title: "Copied", body: action === "copy-path" ? abs : path, level: "success", timeout: 2000 });
+        return;
+      case "open-default":
+      case "reveal": {
+        const args = platform === "macos" ? ["open", action === "reveal" ? ["-R", abs] : [abs]]
+          : platform === "windows" ? (action === "reveal" ? ["explorer", [`/select,${abs.replace(/\//g, "\\")}`]] : ["cmd", ["/c", "start", "", abs]])
+          : ["xdg-open", [action === "reveal" ? join(root, parentOf(path)) : abs]];
+        // explorer.exe exits 1 even when it worked, so only a failure to start counts.
+        exec(args[0], args[1]).catch(e => fail("Couldn't open", e));
+        return;
+      }
+    }
+    cx.spawn(async cx => {
+      try {
+        if (action === "new-file" || action === "new-folder") {
+          const target = path ? `${path}/${name}` : name;
+          await fsop(action, join(root, target), null, on);
+          if (path && !this.folders.has(path) && this.current(context)) this.toggle(path, cx);
+          if (action === "new-file" && this.current(context)) this.openFile(target, false);
+        } else if (action === "rename") {
+          const target = parentOf(path) ? `${parentOf(path)}/${name}` : name;
+          await fsop("rename", abs, join(root, target), on);
+          if (this.current(context)) for (const folder of [...this.folders]) if (folder === path || folder.startsWith(path + "/")) {
+            this.folders.delete(folder); this.entries.delete(folder);
+            this.folders.add(target + folder.slice(path.length));
+          }
+        } else if (action === "delete") {
+          await fsop("delete", abs, null, on);
+          if (this.current(context)) for (const folder of [...this.folders]) if (folder === path || folder.startsWith(path + "/")) { this.folders.delete(folder); this.entries.delete(folder); }
+        } else return;
+        if (this.current(context)) { this.loading = false; this.refresh(cx); }
+      } catch (e) {
+        fail(action === "delete" ? `Couldn't delete ${baseName(path)}` : action === "rename" ? `Couldn't rename ${baseName(path)}` : `Couldn't create ${name}`, e);
+      } finally { cx.notify(); }
+    });
+  }
+
   rows(prefix, depth, out, t, opened = this.openedFile()) {
     if (out.length >= TOTAL || depth > 40) return out;
     for (const entry of this.entries.get(prefix) ?? []) {
@@ -190,6 +293,7 @@ export default class Files extends View {
       out.push(h_flex().id(`file-${path}`).h(28).flex_none().pl(8 + depth * 18).pr(8).gap(7).items_center().rounded(7).cursor_pointer().hover(s => s.bg(t.hover))
         .when(!entry.dir && opened === `${this.root}/${path}`, el => el.bg(t.selected))
         .on_click((e, cx) => entry.dir ? this.toggle(path, cx) : this.openFile(path, e.modifiers.platform))
+        .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.openMenu(path, entry.dir); })
         .child(entry.dir ? svg(`mods/mayonaka-files/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
         .child(svg(`mods/mayonaka-files/${entry.dir ? "folder" : "file"}.svg`).size(14).flex_none().text_color(t.muted))
         .child(div().flex_1().min_w(0).truncate().child(entry.name))
@@ -204,13 +308,17 @@ export default class Files extends View {
     const f = focused(), fp = f?.pane && panes().find(p => p.pane === f.pane);
     if (fp?.mod === "mayonaka-editor") this.lastEditor = fp.pane;
     if (key() !== this.context?.key) this.refresh(cx);
+    const action = shared(ACTION);
+    if (action?.panel === this.panelId && action.n !== this.handled) { this.handled = action.n; this.perform(action, cx); }
     const t = theme();
     return v_flex().id("files").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
       .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
         .when(Boolean(this.file), el => el.child(div().id("files-back").w(20).cursor_pointer().text_color(t.muted).on_click((_e, cx) => { this.show(null); cx.notify(); }).child("←")))
         .child(div().font_semibold().child("Files"))
         .child(div().flex_1().min_w(0).truncate().text_right().text_size(12).text_color(t.dim).child(this.file ?? this.root?.split(/[\\/]/).pop() ?? "")))
-      .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6).children(this.rows("", 0, [], t))
+      .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6)
+        .on_mouse_down("right", (_e, cx) => { if (this.root) { cx.stop_propagation(); this.openMenu("", true); } })
+        .children(this.rows("", 0, [], t))
         .when(Boolean(this.error) || !this.entries.get("")?.length, el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))
         .when(this.limited, el => el.child(div().p(8).text_size(11).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total")))))
       .when(Boolean(this.file), el => el.child(this.code ? Editor.new(this.code).flex_1().min_h(0) : div().p(12).text_color(t.dim).child(this.fileError || "Loading file…")));

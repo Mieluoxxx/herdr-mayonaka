@@ -47,6 +47,15 @@ Changes and a Graph of every branch.
   unsaved edits is never silently replaced — the first click warns in a toast,
   the second discards. Files refresh on a 10 second timer and on folder changes;
   the tree is capped at 500 entries per folder and 5,000 in total.
+- **Right-click in Files** opens a menu: on a file *Open*, *Open with Default
+  App*, *Reveal in Finder*, *Copy Path*, *Copy Relative Path*, *Rename…*,
+  *Delete*; on a folder *New File…* and *New Folder…* in place of *Open*; on
+  the empty area below the tree the same for the panel's folder plus
+  *Refresh*. ↑/↓, Enter and Esc work in it. Rename
+  selects the name without its extension; an existing name is refused. Delete asks
+  first and moves to the Trash on macOS (`trash`, else Finder); on Linux, Windows
+  and other machines it deletes permanently, and says so. A new file opens in the
+  editor. Default app and Reveal are hidden in remote spaces.
 - **Editor**: markdown opens as rendered preview, everything else as source;
   the eye / code buttons in its 34px header switch. The preview is editable one
   block at a time (a list one item at a time, nested items included), and stays
@@ -110,6 +119,12 @@ Changes and a Graph of every branch.
   would drop keystrokes) and `on_token_click` opens or ticks them, `readTextFile` / `writeTextFile` with the
   expected text, `watchFolder` to reload on outside changes, `nextCommand()` for
   save and preview toggles, `notify` for refused saves.
+- `mods/mayonaka-files-menu/` — the Files right-click menu, opened with
+  `openOverlay({kind: "popup"})` and the rows the panel built in `props.items`;
+  it reopens itself as a `dialog` for the name (`InputState`) and delete steps.
+  It only asks: the choice goes back as `setShared("mayonaka-files.action", {panel,
+  action, path, name, n})` and `mayonaka-files` does the work with `exec` (`sh`, or
+  PowerShell on Windows), `cx.write_to_clipboard` and `notify`.
 - `mods/mayonaka-gitgraph/` — `exec("git", ["log", "--branches", "--remotes",
   "--tags", "HEAD", ...])` with the same no-lock read flags as Changes, `status`
   and `remote`; lanes are laid out in JS and drawn per row with
@@ -136,6 +151,8 @@ Changes and a Graph of every branch.
   `~/.config/herdr-app/cache/mayonaka-editor/<pane id>-<sha1>.<ext>` and removes
   it when the pane shows another file or closes. `fs` reads only under the home
   folder; images elsewhere come through `exec("sh", ["-c", "base64 < …"])`.
+- `mayonaka-files` opens `mayonaka-files-menu` by name: clone or rename one and
+  change the other.
 - `mayonaka-editor` writes files, but only where you run Herdr and only in the
   folder you opened; remote panes are read-only by design.
 - `mayonaka-chrome` reads the node id `sidebar`: a different layout with no
