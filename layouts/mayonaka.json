@@ -168,7 +168,7 @@
           "id": "status",
           "type": "block",
           "content": {
-            "mod": "workspace-status"
+            "mod": "mayonaka-status"
           },
           "size": {
             "px": 28

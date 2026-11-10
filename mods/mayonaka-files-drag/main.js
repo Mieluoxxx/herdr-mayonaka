@@ -1,8 +1,8 @@
 // A file or folder being dragged out of mayonaka-files. Opened as a transparent window over the whole app the moment a
 // press on a row moves, it takes the rest of the gesture: a label follows the pointer, the pane under it lights up
 // (mayonaka-pane), and letting go hands { action: "drop", pane } back to the panel, which types the path there.
-// props { panel, path, dir, name, x, y }.
-import { View, div, svg } from "gpui-kit";
+// props { panel, path, dir, name, icon, x, y }; icon is the row's Material icon, picked by the panel.
+import { View, div, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { props, closeOverlay, panes, spaces, shared, setShared, theme } from "herdr";
 
@@ -57,7 +57,7 @@ export default class FilesDrag extends View {
       .on_key_down((e, cx) => { if (e.key === "escape") { this.finish(false); cx.stop_propagation(); } })
       .child(h_flex().absolute().left(this.x + 14).top(this.y + 10).h(26).px(9).gap(6).items_center().rounded(7)
         .bg(t.popover).border_1().border_color(this.over ? t.accent : t.border).text_size(12).text_color(t.foreground)
-        .child(svg(`mods/mayonaka-files-drag/${p.dir ? "folder" : "file"}.svg`).size(13).flex_none().text_color(t.muted))
+        .child(image(p.icon).w(14).h(14).flex_none())
         .child(div().max_w(260).truncate().child(p.name ?? ""))
         .when(!this.over, (el) => el.opacity(0.7)));
   }

@@ -1,8 +1,9 @@
 // A lazy file browser for the focused pane's folder. Files open in an editor pane beside the terminals (⌘-click: a new split).
 // Right-click opens mods/mayonaka-files-menu, which hands the chosen action back through shared("mayonaka-files.action").
 // Dragging a row opens mods/mayonaka-files-drag; dropping it on a terminal pane types the path there.
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
+import { fileIcon, folderIcon, iconPath } from "./material.js";
 import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run, shared, setShared, openOverlay, notify } from "herdr";
 
 let last = null;
@@ -58,13 +59,13 @@ async function directory(path, on) {
     // Links keep directory attributes even when dangling; check their target.
     // Other reparse points (OneDrive's folders) have no LinkType and are folders.
     // PowerShell reads curly single quotes as quotes too, so they're doubled like '.
-    const r = await exec("powershell", ["-NoProfile", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); & { param($p) @(Get-ChildItem -LiteralPath $p -Force -ErrorAction Stop | Where-Object Name -ne '.git' | Select-Object -First 501 | ForEach-Object { @{ name=$_.Name; dir=($_.PSIsContainer -and (-not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -or -not $_.LinkType -or ($_.Target -and [IO.Directory]::Exists(([IO.Path]::Combine([IO.Path]::GetDirectoryName($_.FullName), $_.Target[0])))))) } }) | ConvertTo-Json -Compress } '" + path.replace(/['‘’‚‛]/g, "$&$&") + "'"], { on });
+    const r = await exec("powershell", ["-NoProfile", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); & { param($p) @(Get-ChildItem -LiteralPath $p -Force -ErrorAction Stop | Where-Object { @('.git', '.DS_Store', 'Thumbs.db', 'desktop.ini') -notcontains $_.Name -and $_.Name -notlike '._*' } | Select-Object -First 501 | ForEach-Object { @{ name=$_.Name; dir=($_.PSIsContainer -and (-not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -or -not $_.LinkType -or ($_.Target -and [IO.Directory]::Exists(([IO.Path]::Combine([IO.Path]::GetDirectoryName($_.FullName), $_.Target[0])))))) } }) | ConvertTo-Json -Compress } '" + path.replace(/['‘’‚‛]/g, "$&$&") + "'"], { on });
     if (r.code !== 0) throw new Error(r.stderr || "Cannot list this folder");
     const result = JSON.parse(r.stdout || "[]");
     return Array.isArray(result) ? result : [result];
   };
   if (!on && window()?.platform === "windows") return windowsDirectory();
-  const script = 'n=0; for p in "$1"/* "$1"/.[!.]* "$1"/..?*; do [ -e "$p" ] || [ -L "$p" ] || continue; name=${p##*/}; [ "$name" = .git ] && continue; if [ -d "$p" ]; then kind=d; else kind=f; fi; printf "%s\\0%s\\0" "$kind" "$name"; n=$((n+1)); [ "$n" -gt 500 ] && break; done; test -d "$1"';
+  const script = 'n=0; for p in "$1"/* "$1"/.[!.]* "$1"/..?*; do [ -e "$p" ] || [ -L "$p" ] || continue; name=${p##*/}; case $name in .git|.DS_Store|Thumbs.db|desktop.ini|._*) continue;; esac; if [ -d "$p" ]; then kind=d; else kind=f; fi; printf "%s\\0%s\\0" "$kind" "$name"; n=$((n+1)); [ "$n" -gt 500 ] && break; done; test -d "$1"';
   let r;
   try { r = await exec("sh", ["-c", script, "files", path], { on }); }
   catch (e) {
@@ -237,7 +238,7 @@ export default class Files extends View {
     if (!p || Math.hypot(e.position.x - p.x, e.position.y - p.y) < 6) return;
     this.press = null;
     openOverlay({ mod: "mayonaka-files-drag", kind: "window", frame: "none", width: 1, height: 1, at: { x: 0, y: 0 },
-      props: { panel: this.panelId, path: p.path, dir: p.dir, name: baseName(p.path), x: e.position.x, y: e.position.y } });
+      props: { panel: this.panelId, path: p.path, dir: p.dir, name: baseName(p.path), icon: iconPath(p.dir ? folderIcon(baseName(p.path), false) : fileIcon(baseName(p.path))), x: e.position.x, y: e.position.y } });
   }
 
   // No command types text into a terminal without Enter, so the path goes through the clipboard, which is then put back.
@@ -317,7 +318,7 @@ export default class Files extends View {
         .on_mouse_down("left", e => { this.press = { path, dir: entry.dir, x: e.position.x, y: e.position.y }; })
         .on_mouse_move(e => this.dragFrom(e))
         .child(entry.dir ? svg(`mods/mayonaka-files/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
-        .child(svg(`mods/mayonaka-files/${entry.dir ? "folder" : "file"}.svg`).size(14).flex_none().text_color(t.muted))
+        .child(image(iconPath(entry.dir ? folderIcon(entry.name, open) : fileIcon(entry.name))).w(16).h(16).flex_none())
         .child(div().flex_1().min_w(0).truncate().child(entry.name))
         .when(Boolean(mark), el => el.child(div().text_size(11).text_color(mark === "A" ? t.ansi2 : mark === "D" || mark === "U" ? t.ansi1 : t.blocked).child(mark))));
       if (entry.dir && open) this.rows(path, depth + 1, out, t, opened);

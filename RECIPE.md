@@ -24,13 +24,20 @@ Changes and a Graph of every branch.
 - **Files panel, right, 368px** (`min` 280, `max` 900, closed until you open it):
   a stack of three panels, *Files* (`mayonaka-files`), *Changes* (the shipped
   `changes`) and *Graph* (`mayonaka-gitgraph`). *Files* lists the focused pane's folder in 28px rows — chevron,
-  folder or file glyph, name, and a one-letter git mark (`M` `A` `D` `U`) — with a
+  a full-color Material Icon Theme icon (by file name, extension or folder name), name, and a one-letter git mark (`M` `A` `D` `U`) — with a
   42px header showing the folder or the open file's name. *Graph* draws the
   repository's local branches, remote branches and tags as colored lanes in 24px
   rows — the graph, ref pills (`HEAD → main · origin`, `◆ tag`), the subject, the
   short SHA and the date — with an *Uncommitted Changes* row on top when the
   tree is dirty.
-- **Status bar, bottom, 28px**: the shipped `workspace-status`.
+- **Status bar, bottom, 28px**: `mayonaka-status`, the shipped `workspace-status`
+  with the agent count replaced by the current agent's session: its program icon
+  and terminal title (the focused agent, else the shown tab's latest). On the
+  right, before the palette hint, `CPU 16%  MEM 77/128G`: the CPU load and used
+  memory of the machine the shown space lives on (this computer, or the remote
+  one), sampled there every 5 seconds over a second. macOS counts memory as
+  Activity Monitor does (app + wired + compressed, no file cache); Linux uses
+  `MemAvailable`. Where it can't be read (offline, Windows) it is left out.
 - Look: 10px radius cards on a `canvas` background, terminal padding 14px vertical
   by 12px horizontal, no system title bar (the layout draws its own), macOS window
   buttons at `[12, 16]`. Type and colors come from `settings.json`, else Herdr's.
@@ -46,7 +53,8 @@ Changes and a Graph of every branch.
   a plain click retargets the editor pane already in this tab). A file with
   unsaved edits is never silently replaced — the first click warns in a toast,
   the second discards. Files refresh on a 10 second timer and on folder changes;
-  the tree is capped at 500 entries per folder and 5,000 in total.
+  the tree is capped at 500 entries per folder and 5,000 in total. The listing
+  leaves out `.git`, `.DS_Store`, `Thumbs.db`, `desktop.ini` and `._*`.
 - **Right-click in Files** opens a menu: on a file *Open*, *Open with Default
   App*, *Reveal in Finder*, *Copy Path*, *Copy Relative Path*, *Rename…*,
   *Delete*; on a folder *New File…* and *New Folder…* in place of *Open*; on
@@ -152,7 +160,7 @@ Changes and a Graph of every branch.
   Merge into yours; don't replace keys you already use.
 - Shipped mods it uses: `spaces`, `agents`, `changes`, `files` and
   `workspace-chrome` (icons only),
-  `workspace-status`, `picker`, `machine-add`, `toast`, `menu`.
+  `picker`, `machine-add`, `toast`, `menu`.
 
 ## Watch out
 
