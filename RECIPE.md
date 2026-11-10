@@ -190,9 +190,12 @@ Changes and a Graph of every branch.
   icons are its own.
 - `mods/mayonaka-tabs/` — a `mod.clone` of the shipped `tabs`; the only change is
   the *Graph* button, shown when the layout's `panel-body` has a `gitgraph`
-  child.
-- `keys.json` — `mod:mayonaka-editor`: `cmd-s` save, `cmd-shift-v` preview toggle.
-  Merge into yours; don't replace keys you already use.
+  child. Its `nextCommand()` takes a panel id and toggles that panel the same way
+  the *Files* / *Changes* / *Graph* buttons do: show it and select it, or hide it
+  when it already shows that one.
+- `keys.json` — `global`: `cmd-alt-b` toggles the Files panel
+  (`mayonaka-tabs.files`); `mod:mayonaka-editor`: `cmd-s` save, `cmd-shift-v`
+  preview toggle. Merge into yours; don't replace keys you already use.
 - Shipped mods it uses: `spaces`, `agents` and `changes` as blocks; `picker`,
   `machine-add`, `menu` and `new-menu` opened by name; `toast` through `notify`;
   and icons only from `files`, `changes`, `pane` and `workspace-chrome`.
