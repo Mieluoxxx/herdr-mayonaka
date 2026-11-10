@@ -1,6 +1,7 @@
 // A lazy file browser for the focused pane's folder. Files open in an editor pane beside the terminals (⌘-click: a new split).
 // Right-click opens mods/mayonaka-files-menu, which hands the chosen action back through shared("mayonaka-files.action").
-// Dragging a row opens mods/mayonaka-files-drag; dropping it on a terminal pane types the path there.
+// Dragging a row opens mods/mayonaka-files-drag; dropping it on a terminal pane types the path there, and dropping it
+// on another folder row (or the header, or the tree's blank space) moves it there.
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
 import { fileIcon, folderIcon, iconPath } from "./material.js";
@@ -20,21 +21,26 @@ const editorIds = () => shared("mayonaka-editor.ids") ?? {};
 const key = () => JSON.stringify(location());
 const LANG = { ts: "js", tsx: "js", mts: "js", cts: "js", jsx: "js", mjs: "js", toml: "yaml", jsonc: "json", svelte: "html", vue: "html" };
 const PER_FOLDER = 500, TOTAL = 5000;
-const ACTION = "mayonaka-files.action";
+const ACTION = "mayonaka-files.action", DRAG = "mayonaka-files.drag";
+// Rows are a flat list of one height with no gap: a drag places every folder row from the pressed row's rectangle.
+const ROW_H = 28;
 
 const join = (root, path) => (path ? `${root}/${path}` : root);
 const parentOf = (path) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
 const baseName = (path) => path.split(/[\\/]/).pop();
 const shellQuote = (path) => (/^[\w@%+=:,./~-]+$/.test(path) ? path : `'${path.replace(/'/g, "'\\''")}'`);
+const rectOf = (b) => (b ? { x: b.x, y: b.y, w: b.width, h: b.height } : null);
 
 // One file operation, on the pane's machine. Windows here has no sh, so it goes through PowerShell like the listing does.
 async function fsop(kind, a, b, on) {
   if (!on && window()?.platform === "windows") {
     const q = (p) => "'" + p.replace(/['‘’‚‛]/g, "$&$&") + "'";
+    const mv = `if (Test-Path -LiteralPath ${q(b ?? "")}) { throw 'Already exists' }; Move-Item -LiteralPath ${q(a)} -Destination ${q(b ?? "")}`;
     const ps = {
       "new-file": `if (Test-Path -LiteralPath ${q(a)}) { throw 'Already exists' }; New-Item -ItemType File -Path ${q(a)} | Out-Null`,
       "new-folder": `if (Test-Path -LiteralPath ${q(a)}) { throw 'Already exists' }; New-Item -ItemType Directory -Path ${q(a)} | Out-Null`,
-      rename: `if (Test-Path -LiteralPath ${q(b)}) { throw 'Already exists' }; Move-Item -LiteralPath ${q(a)} -Destination ${q(b)}`,
+      rename: mv,
+      move: mv,
       delete: `Remove-Item -LiteralPath ${q(a)} -Recurse -Force`,
     }[kind];
     const r = await exec("powershell", ["-NoProfile", "-Command", `$ErrorActionPreference = 'Stop'; ${ps}`]);
@@ -42,10 +48,13 @@ async function fsop(kind, a, b, on) {
     return;
   }
   const exists = 'if [ -e "$1" ] || [ -L "$1" ]; then echo "${1##*/} already exists" >&2; exit 1; fi; ';
+  // A rename and a drop inside the tree are the same move: an existing name is refused, so mv never moves into a folder.
+  const mv = 'if [ -e "$2" ] || [ -L "$2" ]; then echo "${2##*/} already exists" >&2; exit 1; fi; mv -- "$1" "$2"';
   const sh = {
     "new-file": exists + ': > "$1"',
     "new-folder": exists + 'mkdir -- "$1"',
-    rename: 'if [ -e "$2" ] || [ -L "$2" ]; then echo "${2##*/} already exists" >&2; exit 1; fi; mv -- "$1" "$2"',
+    rename: mv,
+    move: mv,
     // macOS has /usr/bin/trash since 15; elsewhere, and on other machines, delete means delete.
     delete: on || window()?.platform !== "macos" ? 'rm -rf -- "$1"' : 'if command -v trash >/dev/null 2>&1; then trash "$1"; else osascript -e \'on run argv\' -e \'tell application "Finder" to delete (POSIX file (item 1 of argv) as alias)\' -e \'end run\' "$1" >/dev/null; fi',
   }[kind];
@@ -112,6 +121,7 @@ export default class Files extends View {
   }
 
   refresh(cx) {
+    if (this.dragging) return;
     const { cwd, on } = location(), next = key();
     if (next !== this.context?.key) {
       if (this.context) this.saved.set(this.context.key, { folders: this.folders, file: this.file });
@@ -237,8 +247,24 @@ export default class Files extends View {
     const p = this.press;
     if (!p || Math.hypot(e.position.x - p.x, e.position.y - p.y) < 6) return;
     this.press = null;
+    this.dragging = true;
+    setShared(DRAG, { panel: this.panelId, n: Date.now() });
+    // Only the pressed row's rectangle will do: by now the pointer may be over its neighbour, whose index is not p.index.
+    const flat = this.flat ?? [], b = p.bounds, header = this.headerRect, height = this.treeHeight;
+    // Rows are a flat list with no gap, so the pressed row's own rectangle places every row: its height is their
+    // pitch and its index counts rows up to the first one. The header records its rectangle on any press outside
+    // it; the tree reports its height. Together they are the tree's rectangle, in the panel's width below the header.
+    const known = Boolean(b) && b.height > 0 && flat.length === p.total && flat[p.index]?.path === p.path;
+    const tree = known && header && header.h > 0 && header.w > 0 && height > 0 && b.y >= header.y + header.h - 1
+      ? { x: header.x, y: header.y + header.h, w: header.w, h: height } : null;
+    const first = known ? b.y - p.index * b.height : 0;
+    const inside = tree && b.x >= tree.x - 1 && b.x + b.width <= tree.x + tree.w + 1 && b.y + b.height <= tree.y + tree.h + 1;
+    const folders = known ? flat.flatMap((r, i) => (r.dir ? [{ path: r.path, y: first + i * b.height }] : [])) : [];
     openOverlay({ mod: "mayonaka-files-drag", kind: "window", frame: "none", width: 1, height: 1, at: { x: 0, y: 0 },
-      props: { panel: this.panelId, path: p.path, dir: p.dir, name: baseName(p.path), icon: iconPath(p.dir ? folderIcon(baseName(p.path), false) : fileIcon(baseName(p.path))), x: e.position.x, y: e.position.y } });
+      props: { panel: this.panelId, path: p.path, dir: p.dir, parent: parentOf(p.path), name: baseName(p.path), root: baseName(this.root ?? ""),
+        icon: iconPath(p.dir ? folderIcon(baseName(p.path), false) : fileIcon(baseName(p.path))), x: e.position.x, y: e.position.y,
+        ...(known ? { cols: { left: b.x, right: b.x + b.width }, rowH: b.height, first, last: first + flat.length * b.height, folders,
+          header: inside ? header : null, tree: inside ? tree : null } : {}) } });
   }
 
   // No command types text into a terminal without Enter, so the path goes through the clipboard, which is then put back.
@@ -257,8 +283,9 @@ export default class Files extends View {
       props: { stage: "menu", items, panel: this.panelId, path, dir, name: path ? baseName(path) : baseName(this.root ?? ""), root: baseName(this.root ?? ""), on: this.on } });
   }
 
-  // Runs what the menu chose. File work happens here, where the tree, its folders and the editor link live.
-  perform({ action, path, name, pane }, cx) {
+  // Runs what the menu chose, or what a drop handed back. File work happens here, where the tree, its folders
+  // and the editor link live.
+  perform({ action, path, name, pane, to, dir }, cx) {
     const root = this.root, on = this.on, context = this.context, abs = join(root, path);
     const fail = (title, e) => notify({ title, body: String(e?.message ?? e), level: "error" });
     const platform = window()?.platform;
@@ -295,56 +322,90 @@ export default class Files extends View {
             this.folders.delete(folder); this.entries.delete(folder);
             this.folders.add(target + folder.slice(path.length));
           }
+        } else if (action === "move") {
+          // The overlay refuses these too; this is the second check, on the side that does the writing.
+          if (to === parentOf(path) || (dir && (to === path || to.startsWith(path + "/")))) return;
+          const dest = join(root, to ? `${to}/${baseName(path)}` : baseName(path));
+          await fsop("move", abs, dest, on);
+          if (!this.current(context)) return;
+          for (const folder of [...this.folders]) if (folder === path || folder.startsWith(path + "/")) {
+            this.folders.delete(folder); this.entries.delete(folder);
+            this.folders.add((to ? `${to}/` : "") + baseName(path) + folder.slice(path.length));
+          }
+          // Every editor pane showing it, or a file under it, follows: mods/mayonaka-editor reads this.
+          setShared("mayonaka-editor.moved", { from: abs, to: dest, on: on ?? null, n: Date.now() });
+          // The folder that just took it opens, so the moved row is right there.
+          if (to && !this.folders.has(to)) this.toggle(to, cx);
         } else if (action === "delete") {
           await fsop("delete", abs, null, on);
           if (this.current(context)) for (const folder of [...this.folders]) if (folder === path || folder.startsWith(path + "/")) { this.folders.delete(folder); this.entries.delete(folder); }
         } else return;
         if (this.current(context)) { this.loading = false; this.refresh(cx); }
       } catch (e) {
-        fail(action === "delete" ? `Couldn't delete ${baseName(path)}` : action === "rename" ? `Couldn't rename ${baseName(path)}` : `Couldn't create ${name}`, e);
+        fail(action === "delete" ? `Couldn't delete ${baseName(path)}` : action === "rename" ? `Couldn't rename ${baseName(path)}` : action === "move" ? `Couldn't move ${baseName(path)}` : `Couldn't create ${name}`, e);
       } finally { cx.notify(); }
     });
   }
 
-  rows(prefix, depth, out, t, opened = this.openedFile()) {
-    if (out.length >= TOTAL || depth > 40) return out;
-    for (const entry of this.entries.get(prefix) ?? []) {
-      if (out.length >= TOTAL) break;
-      const path = prefix ? `${prefix}/${entry.name}` : entry.name, open = this.folders.has(path), mark = this.marks[`${this.root}/${path}`];
-      out.push(h_flex().id(`file-${path}`).h(28).flex_none().pl(8 + depth * 18).pr(8).gap(7).items_center().rounded(7).cursor_pointer().hover(s => s.bg(t.hover))
-        .when(!entry.dir && opened === `${this.root}/${path}`, el => el.bg(t.selected))
-        .on_click((e, cx) => entry.dir ? this.toggle(path, cx) : this.openFile(path, e.modifiers.platform))
-        .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.openMenu(path, entry.dir); })
-        .on_mouse_down("left", e => { this.press = { path, dir: entry.dir, x: e.position.x, y: e.position.y }; })
-        .on_mouse_move(e => this.dragFrom(e))
-        .child(entry.dir ? svg(`mods/mayonaka-files/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
-        .child(image(iconPath(entry.dir ? folderIcon(entry.name, open) : fileIcon(entry.name))).w(16).h(16).flex_none())
-        .child(div().flex_1().min_w(0).truncate().child(entry.name))
-        .when(Boolean(mark), el => el.child(div().text_size(11).text_color(mark === "A" ? t.ansi2 : mark === "D" || mark === "U" ? t.ansi1 : t.blocked).child(mark))));
-      if (entry.dir && open) this.rows(path, depth + 1, out, t, opened);
-    }
+  // Every row the tree draws, in order: rows are a flat 28px list, so a row's y is the first row's plus its index.
+  flatRows() {
+    const out = [], walk = (prefix, depth) => {
+      if (out.length >= TOTAL || depth > 40) return;
+      for (const entry of this.entries.get(prefix) ?? []) {
+        if (out.length >= TOTAL) break;
+        const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+        out.push({ path, dir: entry.dir, depth, open: entry.dir && this.folders.has(path) });
+        if (entry.dir && this.folders.has(path)) walk(path, depth + 1);
+      }
+    };
+    walk("", 0);
     return out;
+  }
+
+  rows(flat, t) {
+    const opened = this.openedFile();
+    return flat.map(({ path, dir, depth, open }, i) => {
+      const mark = this.marks[`${this.root}/${path}`];
+      return h_flex().id(`file-${path}`).h(ROW_H).flex_none().pl(8 + depth * 18).pr(8).gap(7).items_center().rounded(7).cursor_pointer().hover(s => s.bg(t.hover))
+        .when(!dir && opened === `${this.root}/${path}`, el => el.bg(t.selected))
+        .on_click((e, cx) => dir ? this.toggle(path, cx) : this.openFile(path, e.modifiers.platform))
+        .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.openMenu(path, dir); })
+        .on_mouse_down("left", e => { this.press = { path, dir, x: e.position.x, y: e.position.y, index: i, total: flat.length, bounds: e.bounds }; })
+        .on_mouse_move(e => this.dragFrom(e))
+        .child(dir ? svg(`mods/mayonaka-files/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
+        .child(image(iconPath(dir ? folderIcon(baseName(path), open) : fileIcon(baseName(path)))).w(16).h(16).flex_none())
+        .child(div().flex_1().min_w(0).truncate().child(baseName(path)))
+        .when(Boolean(mark), el => el.child(div().text_size(11).text_color(mark === "A" ? t.ansi2 : mark === "D" || mark === "U" ? t.ansi1 : t.blocked).child(mark)));
+    });
   }
 
   render(cx) {
     this.claimSplit();
+    // While a row is being dragged the tree must not reload: the overlay finds folders by the rows it measured.
+    const drag = shared(DRAG), live = drag?.panel === this.panelId && Date.now() - (drag.n ?? 0) < 60000;
+    if (live) this.dragging = true;
+    else if (this.dragging) { this.dragging = false; this.refresh(cx); }
     const f = focused(), fp = f?.pane && panes().find(p => p.pane === f.pane);
     if (fp?.mod === "mayonaka-editor") this.lastEditor = fp.pane;
     if (key() !== this.context?.key) this.refresh(cx);
     const action = shared(ACTION);
     if (action?.panel === this.panelId && action.n !== this.handled) { this.handled = action.n; this.perform(action, cx); }
-    const t = theme();
+    const t = theme(), flat = this.flat = this.flatRows();
     return v_flex().id("files").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
       .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
+        // A drop here means the panel's own folder, so its rectangle is remembered for the drag overlay.
+        .on_mouse_down_out(e => { this.headerRect = rectOf(e.bounds); })
         .when(Boolean(this.file), el => el.child(div().id("files-back").w(20).cursor_pointer().text_color(t.muted).on_click((_e, cx) => { this.show(null); cx.notify(); }).child("←")))
         .child(div().font_semibold().child("Files"))
         .child(div().flex_1().min_w(0).truncate().text_right().text_size(12).text_color(t.dim).child(this.file ?? this.root?.split(/[\\/]/).pop() ?? "")))
       .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6)
+        // The drag overlay needs the tree's height; its width and top come from the header's rectangle.
+        .on_size_change(size => { this.treeHeight = size.height; })
         .on_mouse_down("right", (_e, cx) => { if (this.root) { cx.stop_propagation(); this.openMenu("", true); } })
         // There is no "button still held" on a move, so a press that leaves the tree or comes up is forgotten.
         .on_mouse_up("left", () => { this.press = null; })
         .on_hover(hovered => { if (!hovered) this.press = null; })
-        .children(this.rows("", 0, [], t))
+        .children(this.rows(flat, t))
         .when(Boolean(this.error) || !this.entries.get("")?.length, el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))
         .when(this.limited, el => el.child(div().p(8).text_size(11).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total")))))
       .when(Boolean(this.file), el => el.child(this.code ? Editor.new(this.code).flex_1().min_h(0) : div().p(12).text_color(t.dim).child(this.fileError || "Loading file…")));

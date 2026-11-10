@@ -37,6 +37,7 @@ export default class EditorPane extends View {
     // Retargets live in shared state so a restart reopens the file shown last, not the one the pane was made with.
     const saved = this.id ? shared("mayonaka-editor.files")?.[this.id] : null;
     this.seen = shared("mayonaka-editor.open")?.n ?? 0;
+    this.movedSeen = shared("mayonaka-editor.moved")?.n ?? 0;
     this.open(saved ?? { file: p.file, on: p.on ?? null, root: p.root ?? null }, cx);
     cx.spawn(async (cx) => {
       for (;;) {
@@ -62,6 +63,18 @@ export default class EditorPane extends View {
     if (!isImage(file)) this.dropImage();
     Object.assign(this, { file, on, root, original: null, dirty: false, error: null, imageError: null, mode: isMarkdown(file) || isImage(file) ? "preview" : "source" });
     if (this.id) setShared("mayonaka-editor.files", { ...(shared("mayonaka-editor.files") ?? {}), [this.id]: { file, on, root } });
+    this.load(cx);
+    this.watch(cx);
+  }
+
+  // mayonaka-files moved this file, or a folder above it. Unlike open() this keeps the buffer: unsaved edits must
+  // go on to the new path, since a save to the old one would bring the moved file back.
+  follow({ from, to, on = null }, cx) {
+    if (!this.file || (this.on ?? null) !== on) return;
+    const file = this.file === from ? to : this.file.startsWith(from + "/") ? to + this.file.slice(from.length) : null;
+    if (!file) return;
+    this.file = file; this.error = null;
+    if (this.id) setShared("mayonaka-editor.files", { ...(shared("mayonaka-editor.files") ?? {}), [this.id]: { file, on: this.on, root: this.root } });
     this.load(cx);
     this.watch(cx);
   }
@@ -424,6 +437,8 @@ export default class EditorPane extends View {
       this.seen = req.n;
       if (this.id && req.id === this.id) this.open(req, cx);
     }
+    const moved = shared("mayonaka-editor.moved");
+    if (moved && moved.n > this.movedSeen) { this.movedSeen = moved.n; this.follow(moved, cx); }
     const t = theme();
     if (!this.file) return div().size_full().p(16).bg(t.background).text_color(t.dim).child("No file");
     return v_flex().id("mayonaka-editor").size_full().min_h(0).bg(t.background).text_color(t.foreground)

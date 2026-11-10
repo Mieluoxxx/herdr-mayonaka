@@ -65,10 +65,17 @@ Changes and a Graph of every branch.
   and other machines it deletes permanently, and says so. A new file opens in the
   editor. Default app and Reveal are hidden in remote spaces.
 - **Drag a file or folder** out of Files onto a terminal pane to type its path
-  there (shell-quoted, with a trailing space, no Enter). A label follows the
-  pointer and the target pane's header lights up in `accent`; Esc or a drop
-  anywhere else cancels. It goes through the clipboard, which gets its text back
-  right after.
+  there (shell-quoted, with a trailing space, no Enter). Inside the tree, dropping
+  the row on another folder row moves it into that folder; the panel's header or
+  the tree's blank space moves it out to the panel's folder. The row that would
+  take it lights up and the label says where it goes (`→ docs`), the folder it
+  lands in opens, and the tree refreshes. A name already taken there is refused
+  in a toast, and a folder cannot go into itself or below itself. Editor panes
+  showing the file that moved, or a file under a folder that moved, follow it
+  with their unsaved edits. Over a terminal, the target pane's
+  header lights up in `accent` instead, and the drop types the path (through the
+  clipboard, which gets its text back right after). Esc or a drop anywhere else
+  cancels.
 - **Editor**: markdown opens as rendered preview, everything else as source;
   the eye / code buttons in its 34px header switch. The preview is editable one
   block at a time (a list one item at a time, nested items included), and stays
@@ -140,9 +147,19 @@ Changes and a Graph of every branch.
   PowerShell on Windows), `cx.write_to_clipboard` and `notify`.
 - `mods/mayonaka-files-drag/` — the drag: a transparent `kind: "window"`,
   `frame: "none"` overlay over the whole window, opened when a pressed row moves
-  6px, that takes the rest of the gesture. On release it posts `{action:
-  "drop", pane}` and the panel runs `cx.write_to_clipboard`, `pane.focus` and
-  `terminal.paste`, then restores the clipboard.
+  6px, that takes the rest of the gesture. `target.js` (pure geometry, no Herdr
+  imports) turns props `{ path, dir, parent, cols, rowH, first, last, folders,
+  header, tree }` into the drop under the pointer: a folder row's 28px band, the panel's
+  header, or the tree's blank space. Those come from the pressed row's own
+  `bounds` — rows are a flat list of one height, so its index places every row —
+  plus the header rectangle the panel records on `on_mouse_down_out` and the
+  tree height from `on_size_change`. The panel
+  sets `shared("mayonaka-files.drag")` for the gesture so its 10-second refresh
+  never moves a row under the pointer; the overlay clears it on release. On
+  release it posts `{action: "move", to}` (the panel runs `mv` with an existence
+  guard, then posts `shared("mayonaka-editor.moved")` `{from, to, on}` for the
+  editor panes) or `{action: "drop", pane}` (the panel runs `cx.write_to_clipboard`,
+  `pane.focus` and `terminal.paste`, then restores the clipboard).
 - `mods/mayonaka-pane/` — a `mod.clone` of the shipped `pane` header. Herdr gives
   mods no pane geometry, so on every press (`on_mouse_down_out` carries the
   element's `bounds`) each header writes where it is to
@@ -176,6 +193,14 @@ Changes and a Graph of every branch.
   folder; images elsewhere come through `exec("sh", ["-c", "base64 < …"])`.
 - `mayonaka-files` opens `mayonaka-files-menu` by name: clone or rename one and
   change the other.
+- A drop inside the tree reads row positions from the pressed row's `bounds` and
+  the header / tree rectangles recorded by the last press elsewhere, so those get
+  checked against each other first. When they don't line up (another layout, a
+  stale rectangle) `target.js` is handed no folders and a drop falls back to the
+  terminal behaviour.
+- A move is `sh` + `mv` on the pane's machine, or PowerShell's `Move-Item` on
+  Windows. It refuses an existing name; it does not ask first, and there is no
+  undo beyond the shell's own.
 - `mayonaka-editor` writes files, but only where you run Herdr and only in the
   folder you opened; remote panes are read-only by design.
 - `mayonaka-chrome` reads the node id `sidebar`: a different layout with no
@@ -194,5 +219,8 @@ Changes and a Graph of every branch.
   `herdr-app status`.
 - Clicking a file in the Files panel splits a code pane showing that file; clicking
   another file retargets it; ⌘S on an edited file writes it and the dot disappears.
+- Dragging a row onto a folder row moves it in and the tree shows it there;
+  dragging it onto the panel's header moves it out to the panel's folder;
+  dragging it onto a terminal still types its path.
 - The Graph button opens a lane graph of the focused pane's repository; clicking
   a commit lists its changed files.
