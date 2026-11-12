@@ -1,8 +1,9 @@
 import { View, div, PathBuilder } from "gpui-kit";
-import { v_flex, h_flex, Scrollbar, v_virtual_list } from "gpui-base";
+import { v_flex, h_flex, Scrollbar, v_virtual_list, Popup } from "gpui-base";
 import { spaces, panes, focused, exec, watchFolder, theme, settings, run } from "herdr";
 
 const ROW = 24, LANE = 12, DOT = 3.5, MAX_LANES = 12, LIMIT = 600;
+const CARD_W = 420, CARD_H = 340, CARD_GAP = 8;
 // Same read-only flags as Changes: a refresh must not touch .git, or the folder
 // watch sees it and every refresh starts the next one.
 const READ = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "diff.autoRefreshIndex=false"];
@@ -95,7 +96,7 @@ function longDate(seconds) {
 
 export default class GitGraph extends View {
   init(_props, cx) {
-    this.rows = []; this.raw = null; this.selected = null; this.detail = null;
+    this.rows = []; this.raw = null; this.selected = null; this.detail = null; this.dismissed = null; this.press = null; this.at = ROW;
     this.refresh(cx);
     cx.timer.every(15000, (cx) => this.refresh(cx));
   }
@@ -161,8 +162,24 @@ export default class GitGraph extends View {
     });
   }
 
+  close(cx) { this.selected = null; this.detail = null; cx.notify(); }
+
+  // A press outside the card closes it. Pressing the commit it belongs to is the first half of a click
+  // that pick() sees next, so that click is remembered and must not reopen what the press just closed.
+  dismiss(hash, e, cx) {
+    // Synthetic input can report a press at (-1, -1); no real press lands off-window.
+    if (e.position.x < 0 || e.position.y < 0 || this.selected !== hash) return;
+    this.dismissed = { hash, at: Date.now() };
+    this.close(cx);
+  }
+
   pick(row, cx) {
-    if (this.selected === row.hash) { this.selected = null; this.detail = null; cx.notify(); return; }
+    const gone = this.dismissed;
+    this.dismissed = null;
+    if (gone?.hash === row.hash && Date.now() - gone.at < 400) return;
+    if (this.selected === row.hash) { this.close(cx); return; }
+    // The list reports which commit was clicked, not where; the press that came just before it knows.
+    this.at = this.press?.y ?? ROW;
     this.selected = row.hash; this.detail = row.hash === WORKTREE ? { worktree: true, dirty: row.dirty } : { loading: true };
     cx.notify();
     if (row.hash === WORKTREE) return;
@@ -235,19 +252,37 @@ export default class GitGraph extends View {
       .when(row.hash === WORKTREE, el => el.child(div().flex_none().text_size(11).text_color(t.blocked).child(`${row.dirty} files`)));
   }
 
+  // The card floats above the window, to the left of the panel and level with the row that was pressed, so it
+  // covers neither the list nor the row. top_right pins its top right corner to the bottom right of a 1px
+  // trigger on the list's left edge; the gap is padding, since the card is the only thing that may be drawn.
+  // It is built here and not in the row renderer: a handler registered there throws.
+  floating(card) {
+    return Popup.new("gitgraph-card", div().w(1).h(1)).absolute().top(Math.max(0, this.at - ROW / 2)).left(0)
+      .anchor("top_right").content(div().pr(CARD_GAP).child(card));
+  }
+
   details(t, mono) {
     const d = this.detail, row = this.rows.find(r => r.hash === this.selected);
     if (!d || !row) return null;
-    const box = v_flex().id("gitgraph-detail").flex_none().max_h(240).overflow_y_scrollbar().p(12).gap(6).border_t(1).border_color(t.border).text_size(12);
-    if (d.worktree) return box
+    // overflow_y_scrollbar() never scrolls a box that only has a max height, so the box scrolls itself
+    // and the bar is placed beside it. The id carries the commit, so each one opens at its top.
+    const id = `gitgraph-detail-${row.hash}`;
+    const box = v_flex().id(id).max_h(CARD_H).overflow_y_scroll().p(12).gap(6).text_size(12);
+    // The card covers rows, so a press on it is kept from reaching them.
+    const wrap = (el) => div().id("gitgraph-card").relative().flex_none().w(CARD_W).bg(t.popover).text_color(t.foreground)
+      .border_1().border_color(t.border).rounded(10).shadow_lg().overflow_hidden()
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_mouse_down_out((e, cx) => this.dismiss(row.hash, e, cx))
+      .child(el).child(Scrollbar.vertical(id).absolute().inset_0());
+    if (d.worktree) return wrap(box
       .child(div().text_color(t.muted).child(`${d.dirty} uncommitted ${d.dirty === 1 ? "file" : "files"} on top of HEAD.`))
       .child(div().id("open-changes").flex_none().h(26).px(10).flex().items_center().rounded(6).bg(t.raised).hover(s => s.bg(t.hover)).cursor_pointer()
-        .on_click(() => run("layout.select", { stack: "panel-body", child: "changes" })).child("Open in Changes"));
-    if (d.loading) return box.child(div().text_color(t.dim).child("Loading…"));
-    if (d.error) return box.child(div().text_color(t.ansi1).child(d.error));
+        .on_click(() => run("layout.select", { stack: "panel-body", child: "changes" })).child("Open in Changes")));
+    if (d.loading) return wrap(box.child(div().text_color(t.dim).child("Loading…")));
+    if (d.error) return wrap(box.child(div().text_color(t.ansi1).child(d.error)));
     const [subject, ...rest] = d.body.split("\n");
     const tone = (s) => s === "A" ? t.ansi2 : s === "D" ? t.ansi1 : s === "R" ? t.ansi4 : t.blocked;
-    return box
+    return wrap(box
       .child(div().font_semibold().child(subject || row.subject))
       .when(Boolean(rest.join("\n").trim()), el => el.child(div().text_color(t.muted).child(rest.join("\n").trim())))
       .child(h_flex().gap(6).text_size(11).text_color(t.dim).flex_wrap()
@@ -261,7 +296,7 @@ export default class GitGraph extends View {
           .child(div().w(12).flex_none().text_size(10.5).text_color(tone(f.status)).child(f.status))
           .child(h_flex().flex_1().min_w(0).child(div().text_color(t.dim).truncate().child(parts.length ? parts.join("/") + "/" : "")).child(div().flex_none().max_w(220).truncate().child(name)));
       })).when(d.more > 0, el => el.child(div().text_size(11).text_color(t.dim).child(`and ${d.more} more`)))
-        .when(!d.files.length, el => el.child(div().text_size(11).text_color(t.dim).child("No file changes"))));
+        .when(!d.files.length, el => el.child(div().text_size(11).text_color(t.dim).child("No file changes")))));
   }
 
   render(cx) {
@@ -269,13 +304,15 @@ export default class GitGraph extends View {
     const t = theme(), colors = this.palette(t), mono = settings().font_family ?? "JetBrains Mono";
     const count = this.rows.filter(r => r.hash !== WORKTREE).length;
     const branch = this.rows.flatMap(r => r.refs).find(r => r.kind === "head");
+    const card = this.detail ? this.details(t, mono) : null;
     return v_flex().id("gitgraph").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(12)
       .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
         .child(div().text_size(13).font_semibold().child("Graph"))
         .when(Boolean(branch), el => el.child(div().min_w(0).truncate().text_size(11).text_color(t.muted).child(branch.name)))
         .child(div().flex_1())
         .child(div().px(5).py(1).rounded(4).border_1().border_color(t.border).text_size(10).text_color(t.muted).child(`${count}${this.limited ? "+" : ""} ${count === 1 ? "commit" : "commits"}`)))
-      .child(div().flex_1().min_h(0).relative()
+      .child(div().id("gitgraph-body").flex_1().min_h(0).relative()
+        .on_mouse_down("left", (e) => { this.press = e.local_position ?? null; })
         .child(v_virtual_list("gitgraph-list", this.rows.length, ROW, (i) => this.rows[i].hash,
           // The graph column fits the rows on screen, so one wide stretch of history
           // doesn't squeeze every subject.
@@ -288,7 +325,7 @@ export default class GitGraph extends View {
           .size_full().py(4))
         .child(Scrollbar.vertical("gitgraph-list").viewport_from_layout().absolute().inset_0())
         .when(!this.rows.length, el => el.child(div().absolute().top(8).px(14).text_color(t.dim)
-          .child(this.error || (this.loading ? "Loading history…" : this.root ? "No commits yet" : "No folder")))))
-      .when(Boolean(this.detail), el => el.child(this.details(t, mono)));
+          .child(this.error || (this.loading ? "Loading history…" : this.root ? "No commits yet" : "No folder"))))
+        .when(Boolean(card), el => el.child(this.floating(card))));
   }
 }

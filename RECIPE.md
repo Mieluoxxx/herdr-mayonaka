@@ -103,7 +103,11 @@ Changes and a Graph of every branch.
   read-only (the pane gets its file through `exec --on`) and their preview is
   not editable.
 - **Graph**: click a commit to see its full message, author, date, parents
-  and changed files below the list; click it again to close. Clicking the
+  and changed files in a card, always 420px wide, that floats to the left of
+  the panel with its top level with that row, over the pane beside it (the
+  list keeps its size and stays uncovered; the card scrolls past 340px);
+  click the commit again, or press anywhere outside the card, to close it.
+  Clicking the
   *Uncommitted Changes* row offers *Open in Changes*. It follows the focused
   pane's repository like Changes, shows the newest 600 commits (`--date-order`),
   merges as hollow dots and HEAD with a ring, and refreshes on folder changes
@@ -180,7 +184,15 @@ Changes and a Graph of every branch.
   "--tags", "HEAD", ...])` with the same no-lock read flags as Changes, `status`
   and `remote`; lanes are laid out in JS and drawn per row with
   `window.paint_path(PathBuilder.stroke(1.5)...)` layers; `v_virtual_list` keeps
-  only the visible rows built; `watchFolder` triggers refreshes.
+  only the visible rows built; `watchFolder` triggers refreshes. The detail card
+  is a `Popup` (`gpui-base`) built in `render()`, never in the row renderer,
+  where a handler throws and the list draws nothing: `anchor("top_right")` pins
+  its top right corner to a 1px trigger on the list's left edge, at the pressed
+  y, which the list container's `on_mouse_down` recorded as `local_position`
+  because `on_item_click` hands over only the hash; an 8px right padding is the
+  gap to the panel. A `Popup` has no dismissal of its own, so the card's
+  `on_mouse_down_out` closes it, and a press on the card stops propagating so it
+  never reaches the rows underneath.
 - `mods/mayonaka-status/` — the status bar: `spaces()` for the machine and
   branch, `agents()` and `focused()` for the current agent (its `program.icon`
   and its title with the leading status glyph stripped), `keys()` for the
