@@ -23,15 +23,22 @@ of every branch.
   commit for its message and changed files. It never writes to the repository.
 - **Status bar**: the current agent's session, plus CPU load and used memory of
   the machine the shown space lives on.
-- **Keys**: `⌘⌥B` toggles the Files panel, `⌘S` saves in the editor, `⌘⇧V`
-  switches the editor between preview and source.
+- **Command palette**: `⌘⇧P` opens Herdr's palette with a Mayonaka group on
+  top: toggle the Files, Changes and Graph panels, and save or switch preview
+  when the tab shows one editor. With
+  [terminal-browser](https://github.com/zenbu-labs/terminal-browser) installed
+  it also opens that browser in a split to the right or in a new tab.
+- **New tab menu**: the `+` in the tab bar lists Browser under Terminal when
+  terminal-browser is installed, and opens it in a tab of its own.
+- **Keys**: `⌘⌥B` toggles the Files panel, `⌘⇧P` opens the palette, `⌘S` saves
+  in the editor, `⌘⇧V` switches the editor between preview and source.
 
 [RECIPE.md](RECIPE.md) describes every region, size and behavior, and is the
 brief to rebuild the layout from scratch.
 
 ## Install
 
-Built and checked on `herdr-app 0.1.14`, on macOS.
+Built on `herdr-app 0.1.14`; every mod passes `herdr-app check` on `0.1.15`. macOS only so far.
 
 The short way: ask an agent running in Herdr to add the layout from this
 repository. It follows the steps below.
@@ -66,14 +73,20 @@ These mods run programs and touch files, on the machine the pane lives on:
 - `mayonaka-status` runs `iostat`, `vm_stat` and `sysctl` on macOS, or reads
   `/proc` on Linux, every 5 seconds.
 
-None of them reaches the network.
+- `mayonaka-palette` and `mayonaka-new-menu` run `command -v terminal-browser`
+  when they open. Choosing a browser entry starts terminal-browser, which is a
+  Chromium browser with its
+  own network access and, until you turn it off, usage telemetry
+  (`terminal-browser config set telemetry.usage off`).
+
+None of the mods reaches the network itself.
 
 ## Repository
 
 | Path | What it is |
 |---|---|
 | `layouts/` | The layout tree and the small drawing Settings shows for it |
-| `mods/` | The nine mods the layout uses |
+| `mods/` | The eleven mods the layout and its keys use |
 | `keys.json` | The keys the mods expect |
 | `RECIPE.md` | The full brief: what you see, how it behaves, what it is built from |
 | `tools/material-icons.py` | Regenerates the file icons and their lookup table |
