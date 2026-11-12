@@ -58,11 +58,13 @@ export default class MayonakaStatus extends View {
   }
 
   // The palette key as actually bound, not a hardcoded one; without a
-  // binding the hint stays useful ("commands") instead of lying.
+  // binding the hint stays useful ("commands") instead of lying. The click opens
+  // mayonaka-palette, so its key wins over the app palette's.
   hint() {
     const mac = window()?.platform === "macos";
     const mod = { cmd: mac ? "⌘" : "Ctrl+", ctrl: mac ? "⌃" : "Ctrl+", shift: mac ? "⇧" : "Shift+", alt: mac ? "⌥" : "Alt+", option: mac ? "⌥" : "Alt+" };
-    const b = keys().find((k) => k.section === "global" && k.action === "app.palette");
+    const bound = keys().filter((k) => k.section === "global");
+    const b = bound.find((k) => k.action === "mod.open:mayonaka-palette") ?? bound.find((k) => k.action === "app.palette");
     const parts = b && b.keys.endsWith("--") ? [...b.keys.slice(0, -2).split("-"), "-"] : b?.keys.split("-");
     const key = parts && parts.map((p) => mod[p.toLowerCase()] ?? p.toUpperCase()).join("");
     return key ? `${key}  commands` : "commands";
@@ -84,6 +86,6 @@ export default class MayonakaStatus extends View {
         .child(div().min_w(0).truncate().child(name))))
       .when(!name, (el) => el.child(div().flex_1()))
       .when(Boolean(stat?.total), (el) => el.child(h_flex().flex_none().gap(12).child(`CPU ${stat.cpu}%`).child(`MEM ${gb(stat.used)}/${gb(stat.total)}G`)))
-      .child(div().id("palette").flex_none().text_color(t.dim).on_click(() => run("app.palette")).child(this.hint()));
+      .child(div().id("palette").flex_none().text_color(t.dim).on_click(() => run("mod.open", { name: "mayonaka-palette" })).child(this.hint()));
   }
 }

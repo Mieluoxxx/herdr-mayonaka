@@ -1,6 +1,7 @@
 {
   "global": {
-    "cmd-alt-b": "mayonaka-tabs.files"
+    "cmd-alt-b": "mayonaka-tabs.files",
+    "cmd-shift-p": "mod.open:mayonaka-palette"
   },
   "mod:mayonaka-editor": {
     "cmd-s": "mayonaka-editor.save",
