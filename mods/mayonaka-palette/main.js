@@ -96,6 +96,9 @@ function mayonakaEntries({ editor, browser }) {
   if (editor) {
     list.push({ name: "mayonaka-editor.save", args: {}, group: "Mayonaka", title: "Save file", words: "editor write" });
     list.push({ name: "mayonaka-editor.toggle", args: {}, group: "Mayonaka", title: "Toggle preview", words: "editor markdown source" });
+    // One entry that says what it does now: the editor takes "autosave-on" and "autosave-off" as set, not flip.
+    const auto = shared("mayonaka-editor.autosave") !== false;
+    list.push({ name: `mayonaka-editor.autosave-${auto ? "off" : "on"}`, args: {}, group: "Mayonaka", title: `Turn auto save ${auto ? "off" : "on"}`, words: "editor write autosave" });
   }
   // terminal-browser splits through its terminal's own scripting, and Herdr announces itself as Ghostty
   // (TERM_PROGRAM), so Herdr splits the pane here and the browser just runs in it.

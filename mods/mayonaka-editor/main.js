@@ -13,6 +13,9 @@ import { Buffer } from "buffer";
 
 const LANG = { ts: "js", tsx: "js", mts: "js", cts: "js", jsx: "js", mjs: "js", cjs: "js", toml: "yaml", yml: "yaml", jsonc: "json", svelte: "html", vue: "html", md: "markdown", markdown: "markdown", py: "python", rs: "rust", sh: "bash", zsh: "bash" };
 const MAX = 1024 * 1024;
+// The file saves itself this long after the last edit. The palette switches it through the shared key: on unless false.
+const AUTOSAVE_MS = 500;
+const AUTOSAVE = "mayonaka-editor.autosave";
 const HEADING = { 1: 30, 2: 23, 3: 19, 4: 17, 5: 15, 6: 14 };
 const isMarkdown = (f) => /\.(md|markdown|mdx)$/i.test(f ?? "");
 const isSvg = (f) => /\.svg$/i.test(f ?? "");
@@ -44,6 +47,9 @@ export default class EditorPane extends View {
       for (;;) {
         const c = await nextCommand();
         if (c === "save") await this.save(cx);
+        // Set, not flipped: a command reaches every shown editor, and flipping would cancel out with two of them.
+        else if (c === "autosave-on") { setShared(AUTOSAVE, true); this.touch(cx); }
+        else if (c === "autosave-off") setShared(AUTOSAVE, false);
         else if (c === "toggle" && hasPreview(this.file)) { this.commit(); this.mode = this.mode === "preview" ? "source" : "preview"; }
         cx.notify();
       }
@@ -62,7 +68,7 @@ export default class EditorPane extends View {
     this.discardAsked = null;
     this.state?.release(); this.state = null;
     if (!isImage(file)) this.dropImage();
-    Object.assign(this, { file, on, root, original: null, dirty: false, error: null, imageError: null, mode: isMarkdown(file) || isImage(file) ? "preview" : "source" });
+    Object.assign(this, { file, on, root, original: null, dirty: false, error: null, lastError: null, imageError: null, mode: isMarkdown(file) || isImage(file) ? "preview" : "source" });
     if (this.id) setShared("mayonaka-editor.files", { ...(shared("mayonaka-editor.files") ?? {}), [this.id]: { file, on, root } });
     this.load(cx);
     this.watch(cx);
@@ -99,6 +105,7 @@ export default class EditorPane extends View {
           this.state.on("change", (_e, cx) => {
             const dirty = this.state.value() !== this.original;
             if (dirty !== this.dirty || this.mode === "preview") { this.dirty = dirty; cx.notify(); }
+            if (dirty) this.touch(cx);
           });
         }
       } catch { if (this.file === file) this.error = "Cannot open this file (too large, over 1 MiB, or unreadable)"; }
@@ -146,6 +153,7 @@ export default class EditorPane extends View {
   }
 
   async close() {
+    this.pendingSave?.cancel();
     this.dropImage();
   }
 
@@ -163,7 +171,7 @@ export default class EditorPane extends View {
     });
   }
 
-  async save(cx) {
+  async save(cx, auto = false) {
     this.commit(true);
     if (!this.state || !this.dirty || this.saving) return;
     const { state, file, on, original } = this, text = state.value();
@@ -171,15 +179,32 @@ export default class EditorPane extends View {
     try {
       if (on) await writeRemoteText(file, text, original, on, this.id);
       else await writeTextFile(file, text, original);
+      this.lastError = null;
       // A save on another machine takes a while and typing goes on meanwhile; the pane may also have moved to another file.
       if (this.state === state) { this.original = text; this.dirty = state.value() !== text; }
     } catch (e) {
       const name = file.split("/").pop();
-      notify({ title: "Not saved", body: on ? `${name}: ${e?.message ?? e}` : `${name} changed on disk since it was opened. ${e}`, level: "error" });
+      const body = on ? `${name}: ${e?.message ?? e}` : `${name} changed on disk since it was opened. ${e}`;
+      // The timer failing again the same way stays quiet: the dot is still on, and ⌘S says it again.
+      if (!auto || body !== this.lastError) notify({ title: "Not saved", body, level: "error" });
+      this.lastError = body;
     } finally {
       this.saving = false;
     }
     cx.notify();
+  }
+
+  // A timer handler returns nothing, so the save runs in a task, where cx.spawn reports a rejection instead of losing it.
+  touch(cx) {
+    this.pendingSave?.cancel();
+    this.pendingSave = cx.timer.after(AUTOSAVE_MS, (cx) => { cx.spawn((cx) => this.autoSave(cx)); });
+  }
+
+  async autoSave(cx) {
+    if (shared(AUTOSAVE) === false || !this.state || !(this.dirty || this.pending)) return;
+    // One save at a time: look again once the one in flight has had time to finish.
+    if (this.saving) return this.touch(cx);
+    await this.save(cx, true);
   }
 
   link(url, cx) {
@@ -230,7 +255,7 @@ export default class EditorPane extends View {
     const ta = TextareaState.new({ value: b.src });
     ta.set_auto_grow(1, 1000);
     ta.set_value({ text: b.src, tokens: tokenize(b.src) });
-    ta.on("change", (_e, cx) => { if (this.edit?.ta === ta) { this.restyle(this.edit); cx.notify(); } });
+    ta.on("change", (_e, cx) => { if (this.edit?.ta === ta) { this.restyle(this.edit); this.touch(cx); cx.notify(); } });
     this.edit = { ta, start, end, src: b.src, append: Boolean(b.append), prev: b.src, open: null, indent: b.indent ?? 0 };
     this.pending = false;
     // The pane takes focus for itself while handling the click that opened the block, so focus the block after it.

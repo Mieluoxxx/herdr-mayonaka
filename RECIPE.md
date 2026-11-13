@@ -159,10 +159,17 @@ type comes from the person's settings, else Herdr's.
   save or a mode switch writes it back. A blank line typed inside a block splits
   it, an emptied block disappears, and clicking below the last block adds a new
   one. Undo works inside the open block only. Hard line breaks in the file stay
-  line breaks while a block is open. ⌘S saves; ⌘⇧V switches preview and source;
+  line breaks while a block is open. An edit is saved 500 ms after the last one,
+  in source and in the block being typed in alike (the block stays open), and
+  every further edit pushes that back; ⌘S saves at once. *Turn auto save off* in
+  the palette stops the timer in every editor until *Turn auto save on*, ⌘S still
+  saves, and the choice survives a restart. A save that does not go through (the
+  file changed on disk since it was opened, a write error) shows a *Not saved*
+  toast and leaves the dot on; the timer stays quiet about the same failure
+  after that, and ⌘S says it again. ⌘⇧V switches preview and source;
   paste and undo are the editor's own. Files over 1 MiB and binaries are refused.
-  In a space on another machine the file is edited the same way and ⌘S writes it
-  on that machine; the pane doesn't watch a remote folder, so a file changed there
+  In a space on another machine the file is edited the same way and saved on that
+  machine; the pane doesn't watch a remote folder, so a file changed there
   since it was opened is only noticed when saving, and that save is refused with a
   *Not saved* toast.
   **Images** (png, jpg, gif, webp, bmp, ico, tiff, svg) open as a picture fitted
@@ -184,10 +191,11 @@ type comes from the person's settings, else Herdr's.
   order, word starts and runs scoring higher — and shows each entry's group at its
   right. A bound key shows as chips at the row's end. ↑/↓ and PageUp/PageDown move,
   Enter runs, Esc closes. The *Mayonaka* group holds *Toggle Files panel*, *Toggle
-  Changes panel*, *Toggle Graph panel*; *Save file* and *Toggle preview* when the
-  focused tab shows exactly one editor pane; and, when terminal-browser is
-  installed here and the focused space is on this computer, *Open browser to the
-  right* and *Open browser in a new tab*.
+  Changes panel*, *Toggle Graph panel*; *Save file*, *Toggle preview* and *Turn
+  auto save off* (*on* while it is off) when the focused tab shows exactly one
+  editor pane; and, when terminal-browser is installed here and the focused space
+  is on this computer, *Open browser to the right* and *Open browser in a new
+  tab*.
 - **`+` menu**: *Terminal* starts a shell tab. *Browser* starts a tab named
   *Browser* running `terminal-browser`; while the check for it runs the row is
   dimmed, and without it the row stays dimmed and reads *not installed*. In a space
@@ -270,15 +278,22 @@ type comes from the person's settings, else Herdr's.
   `replace_range_with_token` (never `set_value`, which lands a frame late and
   would drop keystrokes) and `on_token_click` opens or ticks them. `image.js`
   draws pictures. `readTextFile` / `writeTextFile` with the expected text,
-  `watchFolder` to reload on outside changes, `nextCommand()` for save and preview
-  toggles, `notify` for refused saves. `remote.js` saves on another machine, where
-  `writeTextFile` does not reach and `exec` has no stdin: it reads the file back
-  with `readTextFile({on})` and refuses unless it still equals the text the pane
-  opened, writes the new text to `cache/mayonaka-editor/save/<pane id>.txt` under
-  the app's home, runs `exec("sh", ["-c", 'exec hc file write --on "$1" "$2" < "$3"',
-  "sh", machine, file, copy])`, checks that the `bytes` it answers with equal the
-  text's UTF-8 length, and deletes the copy. `hc file write` keeps the file's mode
-  and follows a symlink.
+  `watchFolder` to reload on outside changes, `nextCommand()` for save, preview
+  toggle and auto save on / off, `notify` for refused saves. The auto save is a
+  `cx.timer.after(500, …)` that every edit cancels and sets again (from the
+  editor's `change` and from the open block's); its handler starts the save in
+  `cx.spawn`, because a timer handler returns nothing and `cx.spawn` adopts the
+  promise it is given, so a rejection is reported. On and off are two commands
+  that set `shared("mayonaka-editor.autosave")` (on unless it is `false`) and not
+  one that flips it, since a command reaches every shown copy. `remote.js` saves
+  on another machine, where `writeTextFile` does not reach and `exec` has no
+  stdin: it reads the file back with `readTextFile({on})` and refuses unless it
+  still equals the text the pane opened, writes the new text to
+  `cache/mayonaka-editor/save/<pane id>.txt` under the app's home, runs
+  `exec("sh", ["-c", 'exec hc file write --on "$1" "$2" < "$3"', "sh", machine,
+  file, copy])`, checks that the `bytes` it answers with equal the text's UTF-8
+  length, and deletes the copy. `hc file write` keeps the file's mode and follows
+  a symlink.
 - `mods/mayonaka-files-menu/`: the Files right-click menu, opened with
   `openOverlay({kind: "popup"})` and the rows the panel built in `props.items`; it
   reopens itself as a `dialog` for the name (`InputState`) and delete steps. It
@@ -339,10 +354,11 @@ type comes from the person's settings, else Herdr's.
   leaves out a mod's `<mod>.<command>`, so those can only be added in a copy. The
   group holds `mayonaka-tabs.<id>` for each child of the layout's `panel-body`
   stack (*Toggle Files / Changes / Graph panel*, from `layout()`), and
-  `mayonaka-editor.save` / `.toggle` when `panes()` shows exactly one editor in the
-  focused tab; and, when `command -v terminal-browser` succeeds and the focused
-  space is on this computer, `pane.split {direction: "right", argv:
-  ["terminal-browser"]}` and `tab.new {name: "Browser", argv:
+  `mayonaka-editor.save` / `.toggle` and `.autosave-off` (`.autosave-on` while
+  `shared("mayonaka-editor.autosave")` is `false`) when `panes()` shows exactly
+  one editor in the focused tab; and, when `command -v terminal-browser`
+  succeeds and the focused space is on this computer, `pane.split {direction:
+  "right", argv: ["terminal-browser"]}` and `tab.new {name: "Browser", argv:
   ["terminal-browser"]}`. Every other entry is the app's: the `NAMED` titles, one
   *Layout:* entry per `layouts()`, and whatever new command `commands()` reports
   (minus `HIDDEN`). A key hint comes from `keys()`, looking in `global` and in the
@@ -393,6 +409,13 @@ type comes from the person's settings, else Herdr's.
   needed here too (Windows, not tried here). The pane compares the file with what
   it opened just before writing: that is a check, not a lock, and someone else's
   write in those few milliseconds can still be overwritten.
+- Auto save writes the file at every pause of half a second, so anything watching
+  that folder (a dev server, a test runner, a formatter) sees a half-typed file,
+  and an agent changing the file in the meantime makes the next save refuse. The
+  pane takes such a change in only with no unsaved edit and no block open. An
+  edit made in the last half second before a pane closes, or the app quits, is
+  not saved: the timer is cancelled on close and nothing is flushed, since the
+  host only promises to finish some calls at quit.
 - `mayonaka-chrome` reads the node id `sidebar`: a different layout with no
   `sidebar` node keeps it wide.
 - `mayonaka-tabs` opens `mayonaka-new-menu` by name and sizes its popup for it
@@ -438,11 +461,15 @@ type comes from the person's settings, else Herdr's.
   anything inside it once opened) is faded with no mark; a modified file shows a
   yellow `M`, a new one a green `A`.
 - Clicking a file in the Files panel splits a code pane showing that file; clicking
-  another file retargets it; ⌘S on an edited file writes it and the dot disappears.
+  another file retargets it; typing in a file and stopping writes it half a second
+  later with no key pressed, and the dot disappears; ⌘S writes it at once.
+- With *Turn auto save off* chosen in the palette an edit stays unsaved (dot on)
+  until ⌘S, and the palette then offers *Turn auto save on*.
 - In a space on another machine the same holds: paste text into a block of a
-  markdown file there and press ⌘S, and the dot disappears and the file on that
-  machine has the text; if the file was changed there first, a *Not saved* toast
-  says so and nothing is written.
+  markdown file there and wait half a second (or press ⌘S), and the dot disappears
+  and the file on that machine has the text; if the file was changed there first, a
+  *Not saved* toast says so, once however much you go on typing, and nothing is
+  written.
 - Dragging a row onto a folder row moves it in and the tree shows it there;
   dragging it onto the panel's header moves it out to the panel's folder; dragging
   it onto a terminal still types its path.
