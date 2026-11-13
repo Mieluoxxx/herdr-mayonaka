@@ -18,7 +18,7 @@ of every branch.
   it, or onto a terminal to type its path there.
 - **Editor pane**: click a file to open it beside the terminals. Markdown opens
   as a rendered preview you can edit block by block; images open as a picture;
-  everything else opens as source. `⌘S` saves.
+  everything else opens as source. `⌘S` saves, in a remote space on that machine.
 - **Graph**: local branches, remote branches and tags as colored lanes. Click a
   commit for its message and changed files. It never writes to the repository.
 - **Status bar**: the current agent's session, plus CPU load and used memory of
@@ -67,8 +67,11 @@ These mods run programs and touch files, on the machine the pane lives on:
 - `mayonaka-files` lists folders and runs `git status` through `sh` (PowerShell
   on Windows), and creates, renames, moves and deletes files when you ask it
   to. Delete goes to the Trash on macOS and is permanent elsewhere.
-- `mayonaka-editor` writes the file you save, only where you run Herdr; remote
-  panes are read-only.
+- `mayonaka-editor` writes the file you save: directly on this computer, and in a
+  remote space with `hc file write --on <machine>`, which it runs through `sh`
+  while the text waits for a moment in `cache/mayonaka-editor/save/` under the
+  app's home. It reads the file first and refuses the save if it changed since it
+  was opened.
 - `mayonaka-gitgraph` runs read-only `git` commands.
 - `mayonaka-status` runs `iostat`, `vm_stat` and `sysctl` on macOS, or reads
   `/proc` on Linux, every 5 seconds.

@@ -5,6 +5,7 @@ import { v_flex, h_flex, Editor, EditorState, TextView, Textarea, TextareaState 
 import { splitBlocks, refDefs, replaceBlock, appendBlock, itemMarkdown, itemNumbers } from "./blocks.js";
 import { tokenize, blockMode, diff, continueLine, parseMarker, toggleTask } from "./inline.js";
 import { imageSize, formatBytes } from "./image.js";
+import { writeRemoteText } from "./remote.js";
 import { props, shared, setShared, readTextFile, writeTextFile, watchFolder, exec, notify, nextCommand, theme, settings, appHome } from "herdr";
 import { readFile, writeFile, readdir, mkdir, unlink } from "fs/promises";
 import { createHash } from "crypto";
@@ -92,7 +93,7 @@ export default class EditorPane extends View {
         else {
           this.original = text;
           const t = theme(), ext = file.includes(".") ? file.split(".").pop().toLowerCase() : "txt";
-          this.state = EditorState.new({ language: LANG[ext] ?? ext, value: text, readonly: Boolean(this.on),
+          this.state = EditorState.new({ language: LANG[ext] ?? ext, value: text,
             font_family: settings().font_family, font_size: 13, soft_wrap: isMarkdown(file),
             syntax: { keyword: t.ansi5, string: t.ansi2, comment: t.dim, function: t.ansi4, type: t.ansi3, number: t.ansi1, constant: t.ansi6, boolean: t.ansi6 } });
           this.state.on("change", (_e, cx) => {
@@ -149,6 +150,7 @@ export default class EditorPane extends View {
   }
 
   watch(cx) {
+    // watchFolder only sees this computer; a file on another machine is checked again when it is saved.
     if (this.on) return;
     const file = this.file, dir = dirname(file);
     cx.spawn(async (cx) => {
@@ -163,13 +165,19 @@ export default class EditorPane extends View {
 
   async save(cx) {
     this.commit(true);
-    if (!this.state || this.on || !this.dirty) return;
-    const text = this.state.value();
+    if (!this.state || !this.dirty || this.saving) return;
+    const { state, file, on, original } = this, text = state.value();
+    this.saving = true;
     try {
-      await writeTextFile(this.file, text, this.original);
-      this.original = text; this.dirty = false;
+      if (on) await writeRemoteText(file, text, original, on, this.id);
+      else await writeTextFile(file, text, original);
+      // A save on another machine takes a while and typing goes on meanwhile; the pane may also have moved to another file.
+      if (this.state === state) { this.original = text; this.dirty = state.value() !== text; }
     } catch (e) {
-      notify({ title: "Not saved", body: `${this.file.split("/").pop()} changed on disk since it was opened. ${e}`, level: "error" });
+      const name = file.split("/").pop();
+      notify({ title: "Not saved", body: on ? `${name}: ${e?.message ?? e}` : `${name} changed on disk since it was opened. ${e}`, level: "error" });
+    } finally {
+      this.saving = false;
     }
     cx.notify();
   }
@@ -423,11 +431,7 @@ export default class EditorPane extends View {
     if (isImage(this.file) && (this.mode === "preview" || !isSvg(this.file))) return this.imageBody(t);
     if (this.error) return div().p(16).text_color(t.dim).child(this.error);
     if (!this.state) return div().p(16).text_color(t.dim).child("Loading…");
-    if (this.mode === "preview") {
-      const scroll = v_flex().id("preview").flex_1().min_h(0).overflow_y_scrollbar().px(40).py(24).text_size(15);
-      if (this.on) return scroll.child(TextView.markdown(`md-${this.file}`, this.state.value()).selectable(true).on_link_click((url, cx) => this.link(url, cx)));
-      return scroll.gap(10).children(this.blockViews(t));
-    }
+    if (this.mode === "preview") return v_flex().id("preview").flex_1().min_h(0).overflow_y_scrollbar().px(40).py(24).text_size(15).gap(10).children(this.blockViews(t));
     return Editor.new(this.state).flex_1().min_h(0);
   }
 
@@ -445,7 +449,6 @@ export default class EditorPane extends View {
       .child(h_flex().h(34).flex_none().px(12).gap(6).items_center().border_b(1).border_color(t.border).text_size(12)
         .child(h_flex().flex_1().min_w(0).gap(6).items_center().overflow_hidden().children(this.crumbs(t)))
         .when(this.dirty || this.pending, (el) => el.child(div().flex_none().size(7).rounded(4).bg(t.accent)))
-        .when(Boolean(this.on), (el) => el.child(div().flex_none().text_color(t.dim).child("read-only")))
         .when(hasPreview(this.file), (el) => el.child(h_flex().flex_none().gap(2).p(2).rounded(7).bg(t.surface)
           .child(this.toggle(t, "preview", "eye")).child(this.toggle(t, "source", "code")))))
       .child(this.body(t));

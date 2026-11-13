@@ -79,10 +79,10 @@ type comes from the person's settings, else Herdr's.
   can't be read (offline machine, Windows) the CPU and memory are left out.
 - **Editor pane** (opened from Files, beside the terminals): a 34px header with
   the file's path as breadcrumbs, a 7px `accent` dot while the file has unsaved
-  changes, a dimmed *read-only* in a remote space, and, for a file that has a
-  preview, an eye / code pair of buttons. Markdown opens as a rendered preview,
-  everything else as source with line numbers. An image opens as a picture with a
-  26px footer. With no file it reads *No file*.
+  changes and, for a file that has a preview, an eye / code pair of buttons.
+  Markdown opens as a rendered preview, everything else as source with line
+  numbers. An image opens as a picture with a 26px footer. With no file it reads
+  *No file*.
 - **Palette** (⌘⇧P or a click on the hint): a popup 640px wide, 40px from the top
   of the window. A 36px input with an `accent` outline, a magnifier at its start
   and *Esc* at its end; below it ten 32px rows with 26px group titles.
@@ -161,11 +161,14 @@ type comes from the person's settings, else Herdr's.
   one. Undo works inside the open block only. Hard line breaks in the file stay
   line breaks while a block is open. ⌘S saves; ⌘⇧V switches preview and source;
   paste and undo are the editor's own. Files over 1 MiB and binaries are refused.
+  In a space on another machine the file is edited the same way and ⌘S writes it
+  on that machine; the pane doesn't watch a remote folder, so a file changed there
+  since it was opened is only noticed when saving, and that save is refused with a
+  *Not saved* toast.
   **Images** (png, jpg, gif, webp, bmp, ico, tiff, svg) open as a picture fitted
   to the pane, never scaled up, with its size, file size and zoom in the footer;
   svg also has the eye / code switch to edit its source. Images are previewed up
-  to 32 MiB, 6 MiB from another machine. Remote spaces are read-only and their
-  preview is not editable.
+  to 32 MiB, 6 MiB from another machine.
 - **Graph**: click a commit to see its full message, author, date, parents and
   changed files in a card, always 420px wide, that floats to the left of the
   panel with its top level with that row, over the pane beside it (the list keeps
@@ -268,7 +271,14 @@ type comes from the person's settings, else Herdr's.
   would drop keystrokes) and `on_token_click` opens or ticks them. `image.js`
   draws pictures. `readTextFile` / `writeTextFile` with the expected text,
   `watchFolder` to reload on outside changes, `nextCommand()` for save and preview
-  toggles, `notify` for refused saves.
+  toggles, `notify` for refused saves. `remote.js` saves on another machine, where
+  `writeTextFile` does not reach and `exec` has no stdin: it reads the file back
+  with `readTextFile({on})` and refuses unless it still equals the text the pane
+  opened, writes the new text to `cache/mayonaka-editor/save/<pane id>.txt` under
+  the app's home, runs `exec("sh", ["-c", 'exec hc file write --on "$1" "$2" < "$3"',
+  "sh", machine, file, copy])`, checks that the `bytes` it answers with equal the
+  text's UTF-8 length, and deletes the copy. `hc file write` keeps the file's mode
+  and follows a symlink.
 - `mods/mayonaka-files-menu/`: the Files right-click menu, opened with
   `openOverlay({kind: "popup"})` and the rows the panel built in `props.items`; it
   reopens itself as a `dialog` for the name (`InputState`) and delete steps. It
@@ -377,8 +387,12 @@ type comes from the person's settings, else Herdr's.
   --ignored=matching` per refresh: git names an ignored folder once, so its
   contents are never listed by git and the panel infers them from the folder.
   Outside a repository nothing is faded and there are no marks.
-- `mayonaka-editor` writes files, but only where you run Herdr and only in the
-  folder you opened; remote panes are read-only by design.
+- `mayonaka-editor` writes only the file you opened. On another machine that goes
+  through `hc file write --on <machine>`, so `hc` must be on the PATH `exec` sees
+  and that machine's core must have `hc file` (tried on a 0.1.17 core); `sh` is
+  needed here too (Windows, not tried here). The pane compares the file with what
+  it opened just before writing: that is a check, not a lock, and someone else's
+  write in those few milliseconds can still be overwritten.
 - `mayonaka-chrome` reads the node id `sidebar`: a different layout with no
   `sidebar` node keeps it wide.
 - `mayonaka-tabs` opens `mayonaka-new-menu` by name and sizes its popup for it
@@ -425,6 +439,10 @@ type comes from the person's settings, else Herdr's.
   yellow `M`, a new one a green `A`.
 - Clicking a file in the Files panel splits a code pane showing that file; clicking
   another file retargets it; ⌘S on an edited file writes it and the dot disappears.
+- In a space on another machine the same holds: paste text into a block of a
+  markdown file there and press ⌘S, and the dot disappears and the file on that
+  machine has the text; if the file was changed there first, a *Not saved* toast
+  says so and nothing is written.
 - Dragging a row onto a folder row moves it in and the tree shows it there;
   dragging it onto the panel's header moves it out to the panel's folder; dragging
   it onto a terminal still types its path.
