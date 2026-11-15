@@ -5,7 +5,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { props, closeOverlay, openOverlay, setShared, theme, window } from "herdr";
 
-const icon = (name) => `mods/mayonaka-files-menu/${name}.svg`;
+const icon = (name) => (name.includes("/") ? name : `mods/mayonaka-files-menu/${name}.svg`);
 
 function badName(name, current) {
   if (!name.trim()) return "Enter a name";
@@ -37,7 +37,11 @@ export default class FilesMenu extends View {
   post(action, extra = {}) {
     const p = props();
     closeOverlay(p.overlay);
-    setShared("mayonaka-files.action", { panel: p.panel, action, path: p.path, dir: p.dir, ...extra, n: Date.now() });
+    const replyKey = p.replyKey ?? "mayonaka-files.action";
+    setShared(replyKey, {
+      panel: p.panel, editor: p.editor, tabId: p.tabId,
+      action, path: p.path, dir: p.dir, ...extra, n: Date.now(),
+    });
   }
 
   choose(item) {
@@ -127,7 +131,7 @@ export default class FilesMenu extends View {
           .when(i === this.at, (el) => el.bg(t.selected))
           .hover((s) => s.bg(t.hover))
           .on_click(() => this.choose(it))
-          .child(svg(icon(it.icon)).size(14).flex_none().text_color(it.danger ? t.ansi1 : t.muted))
+          .when(Boolean(it.icon), (el) => el.child(svg(icon(it.icon)).size(14).flex_none().text_color(it.danger ? t.ansi1 : t.muted)))
           .child(div().flex_1().child(it.label)))));
   }
 }

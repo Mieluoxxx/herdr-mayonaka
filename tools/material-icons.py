@@ -1,6 +1,7 @@
-# Regenerates mods/mayonaka-files/material/ and material.js: python3 tools/material-icons.py <unpacked material-icon-theme package> mods/mayonaka-files
+# Regenerates mods/mayonaka-files/material/ and material.js (plus any extra mod folders given after it):
+#   python3 tools/material-icons.py <unpacked material-icon-theme package> mods/mayonaka-files mods/mayonaka-editor mods/mayonaka-pane
 import json, os, shutil, sys
-pkg, out = sys.argv[1], sys.argv[2]
+pkg, out, *copies = sys.argv[1:]
 m = json.load(open(f"{pkg}/dist/material-icons.json"))
 ICONS = set("""
 file folder folder-open
@@ -34,7 +35,7 @@ for i in sorted(ICONS):
 shutil.copy(f"{pkg}/LICENSE", f"{out}/material/LICENSE")
 ver = json.load(open(f"{pkg}/package.json"))["version"]
 d = lambda x: json.dumps(x, separators=(",", ":"), sort_keys=True)
-open(f"{out}/material.js", "w").write(f"""// Generated from material-icon-theme {ver} (MIT, see material/LICENSE) by tools/material-icons.py: a subset of its icons and the lookups that point at them.
+js = f"""// Generated from material-icon-theme {ver} (MIT, see material/LICENSE) by tools/material-icons.py: a subset of its icons and the lookups that point at them.
 // A folder's open icon is always its closed name + "-open".
 const NAMES = {d(names)};
 const EXTS = {d(exts)};
@@ -49,5 +50,7 @@ export function fileIcon(name) {{
 }}
 export const folderIcon = (name, open) => (FOLDERS[name.toLowerCase()] ?? "folder") + (open ? "-open" : "");
 export const iconPath = (icon) => `mods/mayonaka-files/material/${{icon}}.svg`;
-""")
+"""
+for dest in [out, *copies]:
+    open(f"{dest}/material.js", "w").write(js)
 print("missing", missing); print(len(ICONS), "icons", len(names), "names", len(exts), "exts", len(folders), "folders")

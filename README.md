@@ -12,27 +12,37 @@ of every branch.
 
 ## What you get
 
-- **Files**: a lazy tree of the focused pane's folder with Material icons and
-  one-letter git marks (`M` `A` `D` `U`). Right-click for open, reveal, copy
-  path, rename, delete, new file or folder. Drag a row onto a folder to move
-  it, or onto a terminal to type its path there.
-- **Editor pane**: click a file to open it beside the terminals. Markdown opens
-  as a rendered preview you can edit block by block; images open as a picture;
-  everything else opens as source. An edit saves itself half a second after your
-  last keystroke, in a remote space on that machine; `⌘S` saves at once.
+- **Files**: a lazy tree of the focused pane's folder with Material icons,
+  open-file dots and one-letter git marks (`M` `A` `D` `U`), plus instant fuzzy
+  search across the whole repository (`⌘⌥F`, `/`, `⌘F`, or just start typing in
+  the tree; `.*` includes git-ignored files). Right-click for open, open to the
+  side, reveal in tree or Finder, copy path, rename, delete, new file or folder.
+  Drag a row onto a folder to move it, or onto a terminal to type its path there.
+- **Editor pane**: click files to open them as tabs beside the terminals
+  (`⌘`-click splits another editor pane to the right; clicking an already open
+  file focuses its tab instead of replacing anything). Tabs sharing a file name
+  show their distinguishing parent folder, reorder by dragging, and close on
+  middle-click or `⌘W` (`⌘⇧T` reopens). Markdown opens as a rendered preview you
+  can edit block by block (over 256 KiB, as source first); images open as a
+  picture; everything else opens as source. An edit saves itself shortly after
+  your last keystroke (half a second up to 256 KiB, 1.5 s up to 2 MiB, 3 s past
+  that), in a remote space on that machine; `⌘S` saves at once.
 - **Graph**: local branches, remote branches and tags as colored lanes. Click a
   commit for its message and changed files. It never writes to the repository.
 - **Status bar**: the current agent's session, plus CPU load and used memory of
   the machine the shown space lives on.
 - **Command palette**: `⌘⇧P` opens Herdr's palette with a Mayonaka group on
-  top: toggle the Files, Changes and Graph panels, and save, switch preview or
-  turn auto save off and on when the tab shows one editor. With
+  top: toggle the Files, Changes and Graph panels, find a file in the Files
+  panel, and save, switch preview, close tabs, reopen a closed tab or turn auto
+  save off and on when the tab has an editor. With
   [terminal-browser](https://github.com/zenbu-labs/terminal-browser) installed
   it also opens that browser in a split to the right or in a new tab.
 - **New tab menu**: the `+` in the tab bar lists Browser under Terminal when
   terminal-browser is installed, and opens it in a tab of its own.
-- **Keys**: `⌘⌥B` toggles the Files panel, `⌘⇧P` opens the palette, `⌘S` saves
-  in the editor, `⌘⇧V` switches the editor between preview and source.
+- **Keys**: `⌘⌥B` toggles the Files panel, `⌘⌥F` searches files, `⌘⇧P` opens the
+  palette, and in the editor `⌘S` saves, `⌘⇧V` switches between preview and
+  source, `⌘W` closes the active file tab, `⌘⇧T` reopens a closed tab, and
+  `⌃Tab` / `⌃⇧Tab` steps through file tabs.
 
 [RECIPE.md](RECIPE.md) describes every region, size and behavior, and is the
 brief to rebuild the layout from scratch.
@@ -65,13 +75,16 @@ copied files removes Mayonaka.
 
 These mods run programs and touch files, on the machine the pane lives on:
 
-- `mayonaka-files` lists folders and runs `git status` through `sh` (PowerShell
-  on Windows), and creates, renames, moves and deletes files when you ask it
-  to. Delete goes to the Trash on macOS and is permanent elsewhere.
-- `mayonaka-editor` writes the file you edit: half a second after your last
-  keystroke (until you turn auto save off in the palette) and when you press `⌘S`.
-  It writes directly on this computer, and in a remote space with `hc file write
-  --on <machine>`, which it runs through `sh` while the text waits for a moment in
+- `mayonaka-files` lists folders, indexes files for search (`git ls-files`,
+  `rg --files` or `find`) and runs `git status` through `sh` (PowerShell on
+  Windows), and creates, renames, moves and deletes files when you ask it to.
+  Delete goes to the Trash on macOS and is permanent elsewhere.
+- `mayonaka-editor` writes the file you edit: 0.5–3 seconds after your last
+  keystroke (scaled by file size, until you turn auto save off in the palette)
+  and when you press `⌘S`.
+  It writes directly on this computer up to 1 MiB, and for larger files (up to
+  8 MiB) or in a remote space with `hc file write` (`--on <machine>` when
+  remote), which it runs through `sh` while the text waits for a moment in
   `cache/mayonaka-editor/save/` under the app's home. It reads the file first and
   refuses the save if it changed since it was opened.
 - `mayonaka-gitgraph` runs read-only `git` commands.

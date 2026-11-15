@@ -48,20 +48,27 @@ type comes from the person's settings, else Herdr's.
   is a card too. Each card has a 30px header, always visible, over a 1px `border`
   line: the program's 14px icon, the program's name in `foreground` (medium
   weight; an agent or shell shows its program's name, anything else the terminal's
-  title), the folder in `dim` filling the rest (home shown as `~`), then the
-  status mark on the right. Hovering the header adds four 14px icon buttons after
-  the status mark: split right, split down, zoom (unzoom when zoomed), close.
+  title; an editor pane shows the active file's 14px Material icon, *Editor* and
+  its relative path separated by ` › ` in `dim`), the folder in `dim` filling the
+  rest (home shown as `~`), then the status mark on the right. Hovering the
+  header adds four 14px icon buttons after the status mark: split right, split
+  down, zoom (unzoom when zoomed), close.
 - **Right panel, 368px** (280–900 wide, closed until a panel button is pressed):
   one panel at a time, each a 10px-radius card with a `border` and the terminals'
   background.
-  - *Files*: a 42px header with *Files* in semibold on the left and, dimmed and
-    right-aligned, the name of the folder it lists (the focused pane's). Below,
-    28px rows: a chevron for folders, a full-color 16px Material Icon Theme icon
-    (by file name, then extension, or the folder's name; an open folder shows its
-    open icon), the name, and a one-letter git mark on the right at 11px: `A`
-    green (added or untracked), `M` yellow, `D` and `U` red. A file or folder git
-    ignores shows its icon faded to 45% and its name in `dim`, with no mark, and so
-    does everything under an ignored folder.
+  - *Files*: a 42px header with *Files* in semibold on the left, the folder name
+    dimmed and right-aligned, and a 26px search button (`⌘⌥F`, `/` or `⌘F`, or
+    typing any character when the tree is focused) that replaces the title row
+    in-place with a 30px `Filter files…` input, a `.*` toggle to include
+    git-ignored files, and a `×` button. Below, 28px rows: a chevron for folders,
+    a full-color 16px Material Icon Theme icon (by file name, then extension, or
+    the folder's name; an open folder shows its open icon), the name (with matched
+    letters highlighted in `accent` during search and the parent folder in `dim`),
+    a 5px dot when the file is open in an editor (`accent` when active or dirty,
+    else `muted`), and a one-letter git mark on the right at 11px: `A` green
+    (added or untracked), `M` yellow, `D` and `U` red. A file or folder git
+    ignores shows its icon faded to 45% and its name in `dim`, with no mark, and
+    so does everything under an ignored folder.
   - *Changes*: the shipped panel, unchanged.
   - *Graph*: the repository's local branches, remote branches and tags as colored
     lanes, in 24px rows: the lane graph, ref pills (`HEAD → main · origin`,
@@ -77,12 +84,14 @@ type comes from the person's settings, else Herdr's.
   shown space lives on; memory under 10G has one decimal), then the palette hint
   in `dim`: the key bound to the palette, such as `⌘⇧P  commands`. Where the load
   can't be read (offline machine, Windows) the CPU and memory are left out.
-- **Editor pane** (opened from Files, beside the terminals): a 34px header with
-  the file's path as breadcrumbs, a 7px `accent` dot while the file has unsaved
-  changes and, for a file that has a preview, an eye / code pair of buttons.
-  Markdown opens as a rendered preview, everything else as source with line
-  numbers. An image opens as a picture with a 26px footer. With no file it reads
-  *No file*.
+- **Editor pane** (opened from Files, beside the terminals): a 34px composite bar
+  holding horizontally scrollable 26px file tabs on the left (14px Material icon,
+  file name, shortest distinguishing parent folder in `dim` when two tabs share a
+  file name, and a `×` on the active tab or a 7px `accent` dot while unsaved that
+  turns into `×` on hover) and, for a file that has a preview, an eye / code pair
+  of buttons on the right. Markdown opens as a rendered preview, everything else
+  as source with line numbers. An image opens as a picture with a 26px footer.
+  With no file it reads *No file*.
 - **Palette** (⌘⇧P or a click on the hint): a popup 640px wide, 40px from the top
   of the window. A 36px input with an `accent` outline, a magnifier at its start
   and *Esc* at its end; below it ten 32px rows with 26px group titles.
@@ -116,37 +125,62 @@ type comes from the person's settings, else Herdr's.
 - **Panel buttons** show that panel for the current space and select it; pressing
   the one that is showing closes the panel. Each space remembers its own choice
   (closed if it never opened one), and ⌘⌥B does the same as the *Files* button.
+  ⌘⌥F opens the Files panel and focuses its file search input.
 - **Pane header**: a click focuses the pane. While a file is dragged out of
   Files, the header of the pane under the pointer turns `accent` with a `selected`
-  background.
-- **Files**: click a folder to expand it, click a file to open it in an editor
-  pane split to the right (⌘-click always makes a new pane; a plain click
-  retargets the editor pane already in this tab). A file with unsaved edits is
-  never silently replaced: the first click warns in a toast, the second discards.
-  Files refresh on a 10 second timer and on folder changes; the tree is capped at
-  500 entries per folder and 5,000 in total. The listing leaves out `.git`,
-  `.DS_Store`, `Thumbs.db`, `desktop.ini` and `._*`.
-- **Right-click in Files** opens a menu: on a file *Open*, *Open with Default
-  App*, *Reveal in Finder*, *Copy Path*, *Copy Relative Path*, *Rename…*,
-  *Delete*; on a folder *New File…* and *New Folder…* in place of *Open*; on the
-  empty area below the tree the same for the panel's folder plus *Refresh*.
+  background. Clicking `×` on an editor card header when any tab has unsaved
+  changes forwards `close-pane` to that editor so edits are flushed (when auto
+  save is on) or warned before closing.
+- **Files**: click a folder to expand it (↑/↓/←/→/Enter navigate from the
+  keyboard), click a file to open it in the active or most recently focused
+  editor pane in this tab without replacing any open tab: if that file is already
+  open in any editor pane in this tab, that pane is focused and switched to its
+  tab; otherwise a new tab is appended. ⌘-click (or ⌘-Enter in search) always
+  splits a new editor pane to the right. Search indexes up to 25,000 files across
+  the repository (`git ls-files --cached --others --exclude-standard`, or with
+  `--ignored` when `.*` is toggled on, falling back to `rg --files` then `find`,
+  or PowerShell on Windows) and fuzzy-ranks the top 100 matches (empty query lists
+  open and dirty files first). Files refresh on a 10 second timer and on folder
+  changes; the tree is capped at 500 entries per folder and 5,000 in total. The
+  listing leaves out `.git`, `.DS_Store`, `Thumbs.db`, `desktop.ini` and `._*`.
+- **Right-click in Files** opens a menu: on a file *Open*, *Open to the Side*,
+  *Reveal in Tree* (from search results), *Open with Default App*, *Reveal in
+  Finder*, *Copy Path*, *Copy Relative Path*, *Rename…*, *Delete*; on a folder
+  *New File…* and *New Folder…* in place of *Open*; on the empty area below the
+  tree the same for the panel's folder plus *Refresh*.
   ↑/↓, Enter and Esc work in it. Rename selects the name without its extension; an
   existing name is refused. Delete asks first and moves to the Trash on macOS
   (`trash`, else Finder); on Linux, Windows and other machines it deletes
-  permanently, and says so. A new file opens in the editor. Default app and Reveal
-  are hidden in remote spaces.
-- **Drag a file or folder** out of Files onto a terminal pane to type its path
-  there (shell-quoted, with a trailing space, no Enter). Inside the tree, dropping
-  the row on another folder row moves it into that folder; the panel's header or
-  the tree's blank space moves it out to the panel's folder. The row that would
-  take it lights up and the label says where it goes (`→ docs`), the folder it
-  lands in opens, and the tree refreshes. A name already taken there is refused
-  in a toast, and a folder cannot go into itself or below itself. Editor panes
-  showing the file that moved, or a file under a folder that moved, follow it
-  with their unsaved edits. Over a terminal, the target pane's header lights up in
-  `accent` instead, and the drop types the path (through the clipboard, which gets
-  its text back right after). Esc or a drop anywhere else cancels.
-- **Editor**: the eye / code buttons switch markdown between preview and source.
+  permanently, and says so. Clean editor tabs for a deleted file close
+  automatically while dirty tabs stay open without auto-saving back over the
+  deletion. A new file opens in the editor. Default app and Reveal are hidden in
+  remote spaces.
+- **Drag a file or folder** out of Files (from either the tree or search results)
+  onto a terminal pane to type its path there (shell-quoted, with a trailing
+  space, no Enter). Inside the tree, dropping the row on another folder row moves
+  it into that folder; the panel's header or the tree's blank space moves it out
+  to the panel's folder. The row that would take it lights up and the label says
+  where it goes (`→ docs`), the folder it lands in opens, and the tree refreshes.
+  A name already taken there is refused in a toast, and a folder cannot go into
+  itself or below itself. Editor tabs showing the file that moved or was renamed,
+  or a file under a folder that moved, follow it with their unsaved edits. Over a
+  terminal, the target pane's header lights up in `accent` instead, and the drop
+  types the path (through the clipboard, which gets its text back right after).
+  Esc or a drop anywhere else cancels.
+- **Editor**: each editor pane holds its own ordered list of file tabs (persisted
+  across restarts; inactive tabs load lazily on first view, and clean background
+  buffers past 24 tabs or 32 MiB hibernate softly while keeping at least 6).
+  Drag a tab to reorder, middle-click or press ⌘W to close the active tab (closing
+  the last tab closes the editor split pane), press ⌘⇧T to reopen a closed tab
+  (up to 10), step through tabs with ⌃Tab / ⌃⇧Tab (or ⌃PageDown / ⌃PageUp or the
+  scroll wheel over the tab bar), and right-click a tab for *Close*, *Close
+  Others*, *Close to the Right*, *Close Saved*, *Close All*, *Copy Path*, *Copy
+  Relative Path* and *Reveal in Finder*. When auto save is on, closing a dirty tab
+  flushes it to disk first; when auto save is off or a save was refused, closing
+  shows an *Unsaved changes* warning toast on the first attempt and discards if
+  repeated within 5 seconds.
+  The eye / code buttons switch markdown between preview and source
+  (markdown over 256 KiB opens in source first).
   The preview is editable one block at a time (a list one item at a time, nested
   items included), and stays rendered while you type: heading, quote, list and
   task markers show as a heading badge, quote bars, bullets, numbers and boxes;
@@ -159,7 +193,8 @@ type comes from the person's settings, else Herdr's.
   save or a mode switch writes it back. A blank line typed inside a block splits
   it, an emptied block disappears, and clicking below the last block adds a new
   one. Undo works inside the open block only. Hard line breaks in the file stay
-  line breaks while a block is open. An edit is saved 500 ms after the last one,
+  line breaks while a block is open. An edit is saved after the last one (500 ms
+  up to 256 KiB, 1.5 s up to 2 MiB, 3 s past that),
   in source and in the block being typed in alike (the block stays open), and
   every further edit pushes that back; ⌘S saves at once. *Turn auto save off* in
   the palette stops the timer in every editor until *Turn auto save on*, ⌘S still
@@ -167,7 +202,9 @@ type comes from the person's settings, else Herdr's.
   file changed on disk since it was opened, a write error) shows a *Not saved*
   toast and leaves the dot on; the timer stays quiet about the same failure
   after that, and ⌘S says it again. ⌘⇧V switches preview and source;
-  paste and undo are the editor's own. Files over 1 MiB and binaries are refused.
+  paste and undo are the editor's own. Brace folding is turned off past 512 KiB,
+  and syntax highlighting is skipped when a line exceeds 10,000 characters. Files
+  over 8 MiB and binaries are refused.
   In a space on another machine the file is edited the same way and saved on that
   machine; the pane doesn't watch a remote folder, so a file changed there
   since it was opened is only noticed when saving, and that save is refused with a
@@ -190,12 +227,13 @@ type comes from the person's settings, else Herdr's.
   *Window* (not on macOS), *App*. Typing ranks entries fuzzily — your letters in
   order, word starts and runs scoring higher — and shows each entry's group at its
   right. A bound key shows as chips at the row's end. ↑/↓ and PageUp/PageDown move,
-  Enter runs, Esc closes. The *Mayonaka* group holds *Toggle Files panel*, *Toggle
-  Changes panel*, *Toggle Graph panel*; *Save file*, *Toggle preview* and *Turn
-  auto save off* (*on* while it is off) when the focused tab shows exactly one
-  editor pane; and, when terminal-browser is installed here and the focused space
-  is on this computer, *Open browser to the right* and *Open browser in a new
-  tab*.
+  Enter runs, Esc closes. The *Mayonaka* group holds *Toggle Files panel*, *Find
+  file in Files panel*, *Toggle Changes panel*, *Toggle Graph panel*; *Save file*,
+  *Toggle preview*, *Close editor tab*, *Close other editor tabs*, *Close saved
+  editor tabs*, *Reopen closed editor tab* and *Turn auto save off* (*on* while it
+  is off) when the focused tab has at least one editor pane; and, when
+  terminal-browser is installed here and the focused space is on this computer,
+  *Open browser to the right* and *Open browser in a new tab*.
 - **`+` menu**: *Terminal* starts a shell tab. *Browser* starts a tab named
   *Browser* running `terminal-browser`; while the check for it runs the row is
   dimmed, and without it the row stays dimmed and reads *not installed*. In a space
@@ -203,8 +241,10 @@ type comes from the person's settings, else Herdr's.
   installed agents, then up to two that are not installed, dimmed; digits 1–9 start
   the nth installed one. *New space* runs `space.new`; the two worktree rows open
   the shipped `worktree` dialog. Esc closes it.
-- **Keys**: ⌘⌥B toggles the Files panel, ⌘⇧P opens the palette, ⌘S saves in the
-  editor, ⌘⇧V switches the editor between preview and source.
+- **Keys**: ⌘⌥B toggles the Files panel, ⌘⌥F searches files in the Files panel,
+  ⌘⇧P opens the palette, and in the editor ⌘S saves, ⌘⇧V switches preview and
+  source, ⌘W closes the active file tab, ⌘⇧T reopens a closed tab, and ⌃Tab /
+  ⌃⇧Tab (plus ⌃PageDown / ⌃PageUp) steps through file tabs.
 
 ## Built from
 
@@ -237,69 +277,93 @@ type comes from the person's settings, else Herdr's.
   `toggleSidebar()` (`layout.resize` + `shared("sidebar.width")`), which nothing in
   this layout calls.
 - `mods/mayonaka-pane/`: a `mod.clone` of the shipped `pane` header, 12px text,
-  with its own `split-right`, `split-down`, `zoom`, `unzoom` and `close` icons and
-  the spinner of `workspace-chrome`. It reads `panes()` for its pane (`props().pane`)
-  and runs `pane.focus`, `pane.split {direction, pane}`, `pane.zoom {pane}`,
-  `pane.close {pane}`. Herdr gives mods no pane geometry, so on every press
-  (`on_mouse_down_out` carries the element's `bounds`) each header writes where it
-  is to `shared("mayonaka-pane.rects")`; the drag picks the pane whose header is
-  the nearest above the pointer across its width, and lights its header from
-  `shared("mayonaka-files.drop")`.
-- `mods/mayonaka-tabs/`: a `mod.clone` of the shipped `tabs` with two changes. The
-  *Graph* button is shown when the layout's `panel-body` has a `gitgraph` child
-  (the other two follow `shared("workspace.panels")`, default `["files",
-  "changes"]`). And the `+` opens `mayonaka-new-menu` as a 250×543 popup in place
-  of `new-menu`. Its `nextCommand()` takes a panel id and toggles that panel the
-  same way the buttons do (`layout.select` + `layout.show`, or `layout.hide` when
-  that panel already shows); the per-space choice is kept in `localStorage`. Pills
-  use `tab.select`, `tab.rename`, `tab.move`, `tab.prev` / `tab.next`, the shipped
-  `menu` for right-click and the shipped `confirm` dialog for a working agent;
-  window buttons use `window.minimize`, `window.maximize`, `window.close`.
-- `mods/mayonaka-files/`: a clone of the shipped `files` (0.1.13) extended with the
-  editor integration: `panes()` to find this tab's editor panes,
-  `shared("mayonaka-editor.ids")`, `shared("mayonaka-editor.open")`, and
-  `run("pane.split", {mod: "mayonaka-editor", ...})`. The tree listing is the
-  shipped code (`exec("sh", ...)` or PowerShell, `watchFolder`, `readTextFile`).
-  Git marks come from `exec("git", [..."status", "--porcelain=v1", "-z",
-  "--no-renames", "--untracked-files=all", "--ignored=matching"])` on the pane's
-  machine with `--no-optional-locks` and `core.fsmonitor=false`, so the refresh
-  writes nothing under `.git`; `!!` entries are the ignored set, and a row is faded
-  when it or any folder above it, up to the repository root, is in it. Its art:
-  `material/`, 242 SVGs from material-icon-theme 5.40.0 (MIT, `material/LICENSE`),
-  drawn with `image()`; `material.js` holds the file-name, extension and
-  folder-name lookups (an exact name first, then the longest dotted suffix; an open
-  folder is its icon + `-open`). Both are generated by `tools/material-icons.py`
-  from an unpacked copy of that package.
-- `mods/mayonaka-editor/`: the editor pane. `EditorState` / `Editor` and
-  `TextView.markdown` from `gpui-base`, one `TextView.markdown` per block of
-  `blocks.js` (a line-based splitter that keeps each block's source offsets) and a
-  `TextareaState` for the block being edited, closed by `on_mouse_down_out`. In it
-  `inline.js` turns markers and inline marks into `.token(...)` spans with
-  `replace_range_with_token` (never `set_value`, which lands a frame late and
-  would drop keystrokes) and `on_token_click` opens or ticks them. `image.js`
-  draws pictures. `readTextFile` / `writeTextFile` with the expected text,
-  `watchFolder` to reload on outside changes, `nextCommand()` for save, preview
-  toggle and auto save on / off, `notify` for refused saves. The auto save is a
-  `cx.timer.after(500, …)` that every edit cancels and sets again (from the
-  editor's `change` and from the open block's); its handler starts the save in
-  `cx.spawn`, because a timer handler returns nothing and `cx.spawn` adopts the
-  promise it is given, so a rejection is reported. On and off are two commands
-  that set `shared("mayonaka-editor.autosave")` (on unless it is `false`) and not
-  one that flips it, since a command reaches every shown copy. `remote.js` saves
-  on another machine, where `writeTextFile` does not reach and `exec` has no
-  stdin: it reads the file back with `readTextFile({on})` and refuses unless it
-  still equals the text the pane opened, writes the new text to
-  `cache/mayonaka-editor/save/<pane id>.txt` under the app's home, runs
-  `exec("sh", ["-c", 'exec hc file write --on "$1" "$2" < "$3"', "sh", machine,
-  file, copy])`, checks that the `bytes` it answers with equal the text's UTF-8
-  length, and deletes the copy. `hc file write` keeps the file's mode and follows
-  a symlink.
-- `mods/mayonaka-files-menu/`: the Files right-click menu, opened with
-  `openOverlay({kind: "popup"})` and the rows the panel built in `props.items`; it
-  reopens itself as a `dialog` for the name (`InputState`) and delete steps. It
-  only asks: the choice goes back as `setShared("mayonaka-files.action", {panel,
-  action, path, name, n})` and `mayonaka-files` does the work with `exec` (`sh`, or
-  PowerShell on Windows), `cx.write_to_clipboard` and `notify`.
+  with its own `split-right`, `split-down`, `zoom`, `unzoom` and `close` icons,
+  the spinner of `workspace-chrome`, and `material.js` so editor panes show the
+  active file's 14px Material icon, *Editor* and its relative path (`mods › …`)
+  from `shared("mayonaka-editor.files")`. It reads `panes()` for its pane
+  (`props().pane`) and runs `pane.focus`, `pane.split {direction, pane}`,
+  `pane.zoom {pane}`, `pane.close {pane}` (or sets
+  `shared("mayonaka-editor.target")` and runs `mayonaka-editor.close-pane` when
+  an editor pane has unsaved tabs). Herdr gives mods no pane geometry, so on
+  every press (`on_mouse_down_out` carries the element's `bounds`) each header
+  writes where it is to `shared("mayonaka-pane.rects")`; the drag picks the pane
+  whose header is the nearest above the pointer across its width, and lights its
+  header from `shared("mayonaka-files.drop")`.
+- `mods/mayonaka-tabs/`: a `mod.clone` of the shipped `tabs` with three changes.
+  The *Graph* button is shown when the layout's `panel-body` has a `gitgraph`
+  child (the other two follow `shared("workspace.panels")`, default `["files",
+  "changes"]`). The `+` opens `mayonaka-new-menu` as a 250×543 popup in place of
+  `new-menu`. And `nextCommand()` also handles `files-search`, selecting and
+  showing the Files panel and setting `shared("mayonaka-files.search")`; any
+  other id toggles that panel the same way the buttons do (`layout.select` +
+  `layout.show`, or `layout.hide` when that panel already shows); the per-space
+  choice is kept in `localStorage`. Pills use `tab.select`, `tab.rename`,
+  `tab.move`, `tab.prev` / `tab.next`, the shipped `menu` for right-click and the
+  shipped `confirm` dialog for a working agent; window buttons use
+  `window.minimize`, `window.maximize`, `window.close`.
+- `mods/mayonaka-files/`: a clone of the shipped `files` (0.1.13), `focusable:
+  true`, extended with multi-tab editor routing and deep fuzzy search: `panes()`
+  to find this tab's editor panes, `shared("mayonaka-editor.ids")`,
+  `shared("mayonaka-editor.files")`, `shared("mayonaka-editor.last")`,
+  `shared("mayonaka-editor.open")` and `run("pane.split", {mod:
+  "mayonaka-editor", ...})`. Search (`Input` / `InputState` from `gpui-base`,
+  `search.svg`) indexes up to 25,000 relative paths via `git ls-files` (falling
+  back to `rg --files` or `find`, or PowerShell on Windows) and renders up to 100
+  fuzzy-ranked rows in an `overflow_y_scroll` list so right-click menus and
+  drag-to-terminal work identically to the tree. The tree listing is the shipped
+  code (`exec("sh", ...)` or PowerShell, `watchFolder`, `readTextFile`), with
+  `location()` as a cold-start fallback. Git marks come from `exec("git",
+  [..."status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all",
+  "--ignored=matching"])` on the pane's machine with `--no-optional-locks` and
+  `core.fsmonitor=false`, so the refresh writes nothing under `.git`; `!!`
+  entries are the ignored set, and a row is faded when it or any folder above it,
+  up to the repository root, is in it. Its art: `material/`, 242 SVGs from
+  material-icon-theme 5.40.0 (MIT, `material/LICENSE`), drawn with `image()`;
+  `material.js` holds the file-name, extension and folder-name lookups (an exact
+  name first, then the longest dotted suffix; an open folder is its icon +
+  `-open`). `tools/material-icons.py` generates `material/` and writes
+  `material.js` into `mayonaka-files`, `mayonaka-editor` and `mayonaka-pane`.
+- `mods/mayonaka-editor/`: the multi-tab editor pane. Each open tab holds its own
+  `EditorState`, markdown block edit state, image metadata, SHA-1 digest and
+  save/dirty timers; `shared("mayonaka-editor.files")[id]` stores `{active, file,
+  on, root, dirty, tabs}` (migrating legacy single-file entries seamlessly),
+  loading only the active tab on startup and soft-hibernating clean background
+  `EditorState`s past 24 tabs or 32 MiB (keeping at least 6). `EditorState` /
+  `Editor` and `TextView.markdown` come from `gpui-base`, one `TextView.markdown`
+  per block of `blocks.js` (a line-based splitter that keeps each block's source
+  offsets) and a `TextareaState` for the block being edited, closed by
+  `on_mouse_down_out`. In it `inline.js` turns markers and inline marks into
+  `.token(...)` spans with `replace_range_with_token` (never `set_value`, which
+  lands a frame late and would drop keystrokes) and `on_token_click` opens or
+  ticks them. `image.js` draws pictures. `readTextFile` / `writeTextFile` with
+  the expected text up to their 1 MiB cap, deduplicated per-directory
+  `watchFolder` to reload clean tabs on outside changes (with a `wc -c` size gate
+  and SHA-1 digest check so a tab's own saves skip decoding a multi-megabyte
+  string again), `nextCommand()` routed to the focused or explicitly targeted
+  editor pane (`shared("mayonaka-editor.target")` / `mayonaka-editor.last`), and
+  `notify` for refused saves or unsaved-close warnings. Keystrokes mark the tab
+  dirty optimistically without copying the buffer across FFI; `saveTab()`, tab
+  close and an 800 ms idle check (when auto save is off) verify against
+  `original`. The auto save is a `cx.timer.after(delay, …)` (500 ms up to
+  256 KiB, 1,500 ms up to 2 MiB, 3,000 ms past that) that every edit cancels and
+  sets again; its handler starts the save in `cx.spawn`. On and off are two
+  commands that set `shared("mayonaka-editor.autosave")` (on unless it is
+  `false`). `remote.js` reads and saves past `herdr`'s limits (up to 8 MiB,
+  `exec`'s output cap): files over 1 MiB are read with `fs` under home or `cat`
+  through `sh` elsewhere, and saves over 1 MiB or on another machine check the
+  file on disk first (by digest here, by text remotely), refuse unless it still
+  matches what the tab opened, write the new text to a per-save staging file
+  `cache/mayonaka-editor/save/<id>-<seq>.txt` under the app's home, run
+  `hc file write` (`--on <machine>` when remote) through `sh`, check that the
+  `bytes` it answers with equal the text's UTF-8 length, and delete the copy.
+  `hc file write` keeps the file's mode, follows a symlink and replaces
+  atomically.
+- `mods/mayonaka-files-menu/`: the popup menu shared by `mayonaka-files` and
+  `mayonaka-editor` tab context menus, opened with `openOverlay({kind: "popup"})`
+  and the rows built in `props.items`; it reopens itself as a `dialog` for the
+  name (`InputState`) and delete steps. It only asks: the choice goes back on
+  `props.replyKey ?? "mayonaka-files.action"` and the caller does the work with
+  `exec` (`sh`, or PowerShell on Windows), `cx.write_to_clipboard` and `notify`.
 - `mods/mayonaka-files-drag/`: the drag. A transparent `kind: "window"`,
   `frame: "none"` overlay over the whole window, opened when a pressed row moves
   6px, takes the rest of the gesture. `target.js` (pure geometry, no Herdr imports)
@@ -353,12 +417,16 @@ type comes from the person's settings, else Herdr's.
   *Mayonaka* group after *Recent*. The app's palette lists `commands()`, which
   leaves out a mod's `<mod>.<command>`, so those can only be added in a copy. The
   group holds `mayonaka-tabs.<id>` for each child of the layout's `panel-body`
-  stack (*Toggle Files / Changes / Graph panel*, from `layout()`), and
-  `mayonaka-editor.save` / `.toggle` and `.autosave-off` (`.autosave-on` while
-  `shared("mayonaka-editor.autosave")` is `false`) when `panes()` shows exactly
-  one editor in the focused tab; and, when `command -v terminal-browser`
-  succeeds and the focused space is on this computer, `pane.split {direction:
-  "right", argv: ["terminal-browser"]}` and `tab.new {name: "Browser", argv:
+  stack (*Toggle Files / Changes / Graph panel*, from `layout()`),
+  `mayonaka-tabs.files-search` (*Find file in Files panel*), and
+  `mayonaka-editor.save` / `.toggle` / `.close-tab` / `.close-others` /
+  `.close-saved` / `.reopen-tab` and `.autosave-off` (`.autosave-on` while
+  `shared("mayonaka-editor.autosave")` is `false`) whenever `panes()` shows at
+  least one editor in the focused tab (setting `shared("mayonaka-editor.target")`
+  before dispatching so multi-pane tabs target only the focused or most recently
+  used editor); and, when `command -v terminal-browser` succeeds and the focused
+  space is on this computer, `pane.split {direction: "right", argv:
+  ["terminal-browser"]}` and `tab.new {name: "Browser", argv:
   ["terminal-browser"]}`. Every other entry is the app's: the `NAMED` titles, one
   *Layout:* entry per `layouts()`, and whatever new command `commands()` reports
   (minus `HIDDEN`). A key hint comes from `keys()`, looking in `global` and in the
@@ -367,10 +435,14 @@ type comes from the person's settings, else Herdr's.
   shipped `prompt` dialog. `mod.json` gives the popup its overlay: `{ kind:
   "popup", at: "top", offset: 40, width: 640, height: 408 }`; `search.svg` is its
   own.
-- `keys.json`: `global`: `cmd-alt-b` toggles the Files panel (`mayonaka-tabs.files`),
-  `cmd-shift-p` opens `mayonaka-palette` in place of the app's `app.palette`;
-  `mod:mayonaka-editor`: `cmd-s` save, `cmd-shift-v` preview toggle. Merge into
-  yours; don't replace keys you already use.
+- `keys.json`: `global`: `cmd-alt-b` toggles the Files panel
+  (`mayonaka-tabs.files`), `cmd-alt-f` searches files in the Files panel
+  (`mayonaka-tabs.files-search`), `cmd-shift-p` opens `mayonaka-palette` in place
+  of the app's `app.palette`; `mod:mayonaka-files`: `cmd-f` and `/` start file
+  search; `mod:mayonaka-editor`: `cmd-s` save, `cmd-shift-v` preview toggle,
+  `cmd-w` close tab, `cmd-shift-t` reopen closed tab, `ctrl-tab` /
+  `ctrl-shift-tab` (plus `ctrl-pagedown` / `ctrl-pageup`) next / previous file
+  tab. Merge into yours; don't replace keys you already use.
 - Shipped mods it uses: `spaces`, `agents` and `changes` as blocks; `picker`,
   `machine-add`, `menu`, `confirm`, `worktree` and `prompt` opened by name; `toast`
   through `notify`; and icons only from `files`, `changes`, `pane`,
@@ -380,17 +452,18 @@ type comes from the person's settings, else Herdr's.
 
 - The mods carry no `gpui-kit.d.ts` / `jsconfig.json`: Herdr writes those on first
   load.
-- `mayonaka-files` and `mayonaka-editor` talk through the shared keys
-  `mayonaka-editor.ids` / `.files` / `.open`. Rename one side and the editor pane
-  stops following the panel.
+- `mayonaka-files`, `mayonaka-pane` and `mayonaka-editor` talk through the shared
+  keys `mayonaka-editor.ids` / `.files` / `.open` / `.last` / `.target` /
+  `.moved` / `.deleted`. Rename one side and they stop following each other.
 - `image()` only loads files under `~/.config/herdr-app` (not absolute paths, not
   symlinks out of it), so the editor copies an image to
-  `~/.config/herdr-app/cache/mayonaka-editor/<pane id>-<sha1>.<ext>` and removes
-  it when the pane shows another file or closes. `fs` reads only under the home
-  folder; images elsewhere come through `exec("sh", ["-c", "base64 < …"])`, whose
-  output is capped at 8 MiB (hence the 6 MiB limit for remote images).
-- `mayonaka-files` opens `mayonaka-files-menu` by name: clone or rename one and
-  change the other.
+  `~/.config/herdr-app/cache/mayonaka-editor/<editor id>-<tab id>-<sha1>.<ext>`
+  and removes it when the tab closes or the pane unmounts (plus sweeps stale
+  files for dead editor ids on startup). `fs` reads only under the home folder;
+  images elsewhere come through `exec("sh", ["-c", "base64 < …"])`, whose output
+  is capped at 8 MiB (hence the 6 MiB limit for remote images).
+- `mayonaka-files` and `mayonaka-editor` open `mayonaka-files-menu` by name:
+  clone or rename one and change the others.
 - A drop inside the tree reads row positions from the pressed row's `bounds` and
   the header / tree rectangles recorded by the last press elsewhere, so those get
   checked against each other first. When they don't line up (another layout, a
@@ -403,19 +476,20 @@ type comes from the person's settings, else Herdr's.
   --ignored=matching` per refresh: git names an ignored folder once, so its
   contents are never listed by git and the panel infers them from the folder.
   Outside a repository nothing is faded and there are no marks.
-- `mayonaka-editor` writes only the file you opened. On another machine that goes
-  through `hc file write --on <machine>`, so `hc` must be on the PATH `exec` sees
-  and that machine's core must have `hc file` (tried on a 0.1.17 core); `sh` is
-  needed here too (Windows, not tried here). The pane compares the file with what
-  it opened just before writing: that is a check, not a lock, and someone else's
-  write in those few milliseconds can still be overwritten.
-- Auto save writes the file at every pause of half a second, so anything watching
-  that folder (a dev server, a test runner, a formatter) sees a half-typed file,
-  and an agent changing the file in the meantime makes the next save refuse. The
-  pane takes such a change in only with no unsaved edit and no block open. An
-  edit made in the last half second before a pane closes, or the app quits, is
-  not saved: the timer is cancelled on close and nothing is flushed, since the
-  host only promises to finish some calls at quit.
+- `mayonaka-editor` writes only the file you opened. On another machine, and for
+  files over 1 MiB here, that goes through `hc file write` (`--on <machine>` when
+  remote), so `hc` must be on the PATH `exec` sees and that machine's core must
+  have `hc file` (tried on a 0.1.17 core); `sh` is needed here too (Windows, not
+  tried here). The pane compares the file with what it opened just before writing:
+  that is a check, not a lock, and someone else's write in those few milliseconds
+  can still be overwritten.
+- Auto save writes the file at every typing pause (0.5–3 s depending on file
+  size), so anything watching that folder (a dev server, a test runner, a
+  formatter) sees a half-typed file, and an agent changing the file in the
+  meantime makes the next save refuse. Closing a dirty tab through `⌘W`, the tab
+  `×` or the editor header `×` flushes it first when auto save is on, whereas
+  quitting the app cancels pending timers without flushing since the host only
+  promises to finish some calls at quit.
 - `mayonaka-chrome` reads the node id `sidebar`: a different layout with no
   `sidebar` node keeps it wide.
 - `mayonaka-tabs` opens `mayonaka-new-menu` by name and sizes its popup for it
@@ -423,10 +497,11 @@ type comes from the person's settings, else Herdr's.
   shipped menu's shared key `new-menu.agents` for its list of agents.
 - `mayonaka-palette` is a copy: when Herdr changes its palette, this one keeps the
   old look and the old `NAMED` titles. New commands still show up, through the
-  `commands()` loop. `<mod>.<command>` reaches every shown copy, which is why the
-  editor entries are offered only with a single editor in the tab. Rebind
-  `cmd-shift-p` to `app.palette` to go back to the app's. Because *Recent* comes
-  first, *Mayonaka* is the first group only until something has been run.
+  `commands()` loop. `<mod>.<command>` reaches every shown copy, so
+  `mayonaka-editor` checks that it owns the focused pane or matches
+  `shared("mayonaka-editor.target")` before acting. Rebind `cmd-shift-p` to
+  `app.palette` to go back to the app's. Because *Recent* comes first, *Mayonaka*
+  is the first group only until something has been run.
 - The browser entries start terminal-browser as the pane's own program, because
   Herdr sets `TERM_PROGRAM=ghostty` and terminal-browser then scripts Ghostty for
   anything it asks of the terminal: `terminal-browser ls` answers "Ghostty is not
@@ -455,14 +530,17 @@ type comes from the person's settings, else Herdr's.
 - Closing the active tab with a × while its agent is working asks first; with
   nothing running it closes at once.
 - The Files button opens a 368px panel listing the focused pane's folder; pressing
-  it again closes it; ⌘⌥B does the same; switching to another space and back
-  restores that space's choice.
+  it again closes it; ⌘⌥B does the same; ⌘⌥F opens it with the fuzzy file search
+  focused; switching to another space and back restores that space's choice.
 - In a repository whose `.gitignore` lists `node_modules`, that folder's row (and
   anything inside it once opened) is faded with no mark; a modified file shows a
   yellow `M`, a new one a green `A`.
-- Clicking a file in the Files panel splits a code pane showing that file; clicking
-  another file retargets it; typing in a file and stopping writes it half a second
-  later with no key pressed, and the dot disappears; ⌘S writes it at once.
+- Clicking a file in the Files panel splits an editor pane showing that file;
+  clicking a second file opens a second tab beside the first without evicting it,
+  clicking an already open file switches back to its tab, ⌘W closes only the
+  active tab (closing the pane when the last tab closes) and ⌘⇧T reopens it;
+  typing in a file and stopping writes it shortly after with no key pressed, and
+  the dot disappears; ⌘S writes it at once.
 - With *Turn auto save off* chosen in the palette an edit stays unsaved (dot on)
   until ⌘S, and the palette then offers *Turn auto save on*.
 - In a space on another machine the same holds: paste text into a block of a
@@ -472,7 +550,7 @@ type comes from the person's settings, else Herdr's.
   written.
 - Dragging a row onto a folder row moves it in and the tree shows it there;
   dragging it onto the panel's header moves it out to the panel's folder; dragging
-  it onto a terminal still types its path.
+  it onto a terminal (from the tree or from search results) still types its path.
 - The Graph button opens a lane graph of the focused pane's repository; clicking a
   commit lists its changed files in a 420px card left of the panel.
 - ⌘⇧P (and a click on the hint at the status bar's right end, which reads

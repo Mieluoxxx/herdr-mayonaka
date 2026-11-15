@@ -6,7 +6,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { commands, layouts, layout, keys, run, exec, theme, props, closeOverlay, openOverlay, shared, spaces, panes, focused, window as win } from "herdr";
+import { commands, layouts, layout, keys, run, exec, theme, props, closeOverlay, openOverlay, shared, setShared, spaces, panes, focused, window as win } from "herdr";
 
 // The list keeps one height while you move: rows and group titles have fixed
 // heights, and the window shows as many as fit in LIST_H.
@@ -86,16 +86,24 @@ function find(node, id) {
 }
 
 // Only what this layout and this tab can do: a layout without the Graph panel has no Graph toggle.
-// `editor`: the tab shows exactly one editor pane. A "<mod>.<command>" is delivered to every shown copy
-// of the mod, so with two editors "Save" would hit both and the entry would lie.
+// `editor`: the tab has an editor pane (targeted explicitly through `mayonaka-editor.target`).
 // `browser`: terminal-browser is installed on the machine the focused space lives on.
-function mayonakaEntries({ editor, browser }) {
+function mayonakaEntries({ editor, multiTab, browser }) {
   const shown = (find(layout(), "panel-body")?.children ?? []).map((c) => c.id);
   const list = PANELS.filter(([id]) => shown.includes(id)).map(([id, title]) => (
     { name: `mayonaka-tabs.${id}`, args: {}, group: "Mayonaka", title: `Toggle ${title} panel`, words: `side panel show hide ${id}` }));
+  if (shown.includes("files")) {
+    list.push({ name: "mayonaka-tabs.files-search", args: {}, group: "Mayonaka", title: "Find file in Files panel", words: "search filter fuzzy open file tree" });
+  }
   if (editor) {
     list.push({ name: "mayonaka-editor.save", args: {}, group: "Mayonaka", title: "Save file", words: "editor write" });
     list.push({ name: "mayonaka-editor.toggle", args: {}, group: "Mayonaka", title: "Toggle preview", words: "editor markdown source" });
+    list.push({ name: "mayonaka-editor.close-tab", args: {}, group: "Mayonaka", title: "Close editor tab", words: "editor buffer close file" });
+    if (multiTab) {
+      list.push({ name: "mayonaka-editor.close-others", args: {}, group: "Mayonaka", title: "Close other editor tabs", words: "editor buffer close others" });
+      list.push({ name: "mayonaka-editor.close-saved", args: {}, group: "Mayonaka", title: "Close saved editor tabs", words: "editor buffer close clean saved" });
+    }
+    list.push({ name: "mayonaka-editor.reopen-tab", args: {}, group: "Mayonaka", title: "Reopen closed editor tab", words: "editor buffer restore undo close" });
     // One entry that says what it does now: the editor takes "autosave-on" and "autosave-off" as set, not flip.
     const auto = shared("mayonaka-editor.autosave") !== false;
     list.push({ name: `mayonaka-editor.autosave-${auto ? "off" : "on"}`, args: {}, group: "Mayonaka", title: `Turn auto save ${auto ? "off" : "on"}`, words: "editor write autosave" });
@@ -170,7 +178,16 @@ export default class Palette extends View {
   init(_props, cx) {
     // Read now: once the palette holds the keyboard, focused() may no longer describe the pane you came from.
     const f = focused();
-    this.ctx = { editor: panes().filter((p) => p.mod === "mayonaka-editor" && p.tab === f?.tab).length === 1, browser: false };
+    const editors = panes().filter((p) => p.mod === "mayonaka-editor" && p.tab === f?.tab);
+    const ids = shared("mayonaka-editor.ids") ?? {};
+    const lastId = shared("mayonaka-editor.last")?.[f?.tab];
+    const targetPane = editors.find((p) => p.pane === f?.pane)
+      ?? editors.find((p) => ids[p.pane] && ids[p.pane] === lastId)
+      ?? editors[0] ?? null;
+    this.targetEditorId = targetPane ? ids[targetPane.pane] ?? null : null;
+    const edInfo = this.targetEditorId ? (shared("mayonaka-editor.files") ?? {})[this.targetEditorId] : null;
+    const tabCount = Array.isArray(edInfo?.tabs) ? edInfo.tabs.length : (edInfo?.file ? 1 : 0);
+    this.ctx = { editor: Boolean(targetPane), multiTab: tabCount > 1, browser: false };
     // exec runs here: on a remote space the pane would look for terminal-browser on that machine instead.
     if (!spaces().find((s) => s.active)?.machine) {
       cx.spawn(async (cx) => {
@@ -206,6 +223,9 @@ export default class Palette extends View {
         command: { name: "mod.clone", args: {} },
       } });
     } else {
+      if (e.name.startsWith("mayonaka-editor.") && this.targetEditorId) {
+        setShared("mayonaka-editor.target", { id: this.targetEditorId, n: Date.now() });
+      }
       run(e.name, e.name === "layout.clone" ? { name: shared("layout") ?? "main" } : e.args);
     }
   }

@@ -1,10 +1,17 @@
 {
   "global": {
     "cmd-alt-b": "mayonaka-tabs.files",
+    "cmd-alt-f": "mayonaka-tabs.files-search",
     "cmd-shift-p": "mod.open:mayonaka-palette"
   },
   "mod:mayonaka-editor": {
     "cmd-s": "mayonaka-editor.save",
-    "cmd-shift-v": "mayonaka-editor.toggle"
+    "cmd-shift-v": "mayonaka-editor.toggle",
+    "cmd-w": "mayonaka-editor.close-tab",
+    "cmd-shift-t": "mayonaka-editor.reopen-tab",
+    "ctrl-tab": "mayonaka-editor.next-tab",
+    "ctrl-shift-tab": "mayonaka-editor.prev-tab",
+    "ctrl-pagedown": "mayonaka-editor.next-tab",
+    "ctrl-pageup": "mayonaka-editor.prev-tab"
   }
 }
