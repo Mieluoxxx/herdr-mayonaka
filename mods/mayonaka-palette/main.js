@@ -6,7 +6,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { commands, layouts, layout, keys, run, exec, theme, props, closeOverlay, openOverlay, shared, setShared, spaces, panes, focused, window as win } from "herdr";
+import { commands, layouts, layout, keys, run, exec, theme, themes, props, closeOverlay, openOverlay, shared, setShared, spaces, panes, focused, window as win } from "herdr";
 
 // The list keeps one height while you move: rows and group titles have fixed
 // heights, and the window shows as many as fit in LIST_H.
@@ -59,7 +59,6 @@ const NAMED = [
   ["app.zoom_out", {}, "App", "Zoom out", "smaller font size"],
   ["app.zoom_reset", {}, "App", "Reset zoom", "font size"],
   ["app.quit", {}, "App", "Quit Herdr", "exit"],
-  ...["graphite", "ink", "moss", "atom-one-dark"].map((n) => ["app.theme", { name: n }, "App", `Theme: ${n.replace(/-/g, " ")}`, "colors look"]),
 ];
 
 // Commands that act on something you point at (ids, terminals): not for a list.
@@ -86,9 +85,10 @@ function find(node, id) {
 }
 
 // Only what this layout and this tab can do: a layout without the Graph panel has no Graph toggle.
-// `editor`: the tab has an editor pane (targeted explicitly through `mayonaka-editor.target`).
+// `editor`: the tab has an editor card (targeted explicitly through `mayonaka-editor.target`).
+// `reopen`: there is at least one closed file card in `mayonaka-editor.closed`.
 // `browser`: terminal-browser is installed on the machine the focused space lives on.
-function mayonakaEntries({ editor, multiTab, browser }) {
+function mayonakaEntries({ editor, reopen, browser }) {
   const shown = (find(layout(), "panel-body")?.children ?? []).map((c) => c.id);
   const list = PANELS.filter(([id]) => shown.includes(id)).map(([id, title]) => (
     { name: `mayonaka-tabs.${id}`, args: {}, group: "Mayonaka", title: `Toggle ${title} panel`, words: `side panel show hide ${id}` }));
@@ -98,15 +98,13 @@ function mayonakaEntries({ editor, multiTab, browser }) {
   if (editor) {
     list.push({ name: "mayonaka-editor.save", args: {}, group: "Mayonaka", title: "Save file", words: "editor write" });
     list.push({ name: "mayonaka-editor.toggle", args: {}, group: "Mayonaka", title: "Toggle preview", words: "editor markdown source" });
-    list.push({ name: "mayonaka-editor.close-tab", args: {}, group: "Mayonaka", title: "Close editor tab", words: "editor buffer close file" });
-    if (multiTab) {
-      list.push({ name: "mayonaka-editor.close-others", args: {}, group: "Mayonaka", title: "Close other editor tabs", words: "editor buffer close others" });
-      list.push({ name: "mayonaka-editor.close-saved", args: {}, group: "Mayonaka", title: "Close saved editor tabs", words: "editor buffer close clean saved" });
-    }
-    list.push({ name: "mayonaka-editor.reopen-tab", args: {}, group: "Mayonaka", title: "Reopen closed editor tab", words: "editor buffer restore undo close" });
+    list.push({ name: "mayonaka-editor.close-pane", args: {}, group: "Mayonaka", title: "Close file card", words: "editor pane close file" });
     // One entry that says what it does now: the editor takes "autosave-on" and "autosave-off" as set, not flip.
     const auto = shared("mayonaka-editor.autosave") !== false;
     list.push({ name: `mayonaka-editor.autosave-${auto ? "off" : "on"}`, args: {}, group: "Mayonaka", title: `Turn auto save ${auto ? "off" : "on"}`, words: "editor write autosave" });
+  }
+  if (reopen) {
+    list.push({ name: "mayonaka-tabs.reopen-file", args: {}, group: "Mayonaka", title: "Reopen closed file", words: "editor pane restore undo close file" });
   }
   // terminal-browser splits through its terminal's own scripting, and Herdr announces itself as Ghostty
   // (TERM_PROGRAM), so Herdr splits the pane here and the browser just runs in it.
@@ -124,9 +122,15 @@ function entries(ctx) {
   const list = NAMED.filter(([n]) => known.has(n))
     .filter(([n]) => !(mac && n.startsWith("window.")))
     .map(([name, args, group, title, words]) => ({ name, args, group, title, words }));
-  for (const l of layouts()) {
+  const allLayouts = layouts();
+  const activeLayout = shared("layout");
+  for (const l of allLayouts) {
     const t = { main: "Herdr", terminals: "Terminals", win98: "Herdr 98" }[l] ?? l.charAt(0).toUpperCase() + l.slice(1);
     list.push({ name: "layout.switch", args: { name: l }, group: "Layout", title: `Layout: ${t}`, words: `look ${l}` });
+  }
+  for (const th of themes()) {
+    if (th.name !== activeLayout && allLayouts.includes(th.name)) continue;
+    list.push({ name: "app.theme", args: { name: th.name }, group: "App", title: `Theme: ${th.name.replace(/-/g, " ")}`, words: "colors look" });
   }
   // Anything new in the app shows up too, until it gets a better name here.
   const named = new Set(NAMED.map(([n]) => n));
@@ -185,9 +189,12 @@ export default class Palette extends View {
       ?? editors.find((p) => ids[p.pane] && ids[p.pane] === lastId)
       ?? editors[0] ?? null;
     this.targetEditorId = targetPane ? ids[targetPane.pane] ?? null : null;
-    const edInfo = this.targetEditorId ? (shared("mayonaka-editor.files") ?? {})[this.targetEditorId] : null;
-    const tabCount = Array.isArray(edInfo?.tabs) ? edInfo.tabs.length : (edInfo?.file ? 1 : 0);
-    this.ctx = { editor: Boolean(targetPane), multiTab: tabCount > 1, browser: false };
+    const closedList = shared("mayonaka-editor.closed");
+    this.ctx = {
+      editor: Boolean(targetPane),
+      reopen: Array.isArray(closedList) && closedList.length > 0,
+      browser: false,
+    };
     // exec runs here: on a remote space the pane would look for terminal-browser on that machine instead.
     if (!spaces().find((s) => s.active)?.machine) {
       cx.spawn(async (cx) => {

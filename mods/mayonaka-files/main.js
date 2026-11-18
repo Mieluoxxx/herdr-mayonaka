@@ -1,5 +1,7 @@
 // A lazy file browser and deep fuzzy file finder for the focused pane's folder.
-// Files open as tabs in an editor pane beside the terminals (⌘-click or ⌘-Enter: a new split).
+// Each opened file tiles as its own rounded card pane beside terminals and other file cards
+// (1st file to the right of the terminal, subsequent files arranged in a balanced stack/grid;
+// ⌘-click opens to the right, ⌥-click opens below).
 // Right-click opens mods/mayonaka-files-menu, which hands the chosen action back through shared("mayonaka-files.action").
 // Dragging a row opens mods/mayonaka-files-drag; dropping it on a terminal pane types the path there, and dropping it
 // on another folder row (or the header, or the tree's blank space) moves it there.
@@ -23,7 +25,8 @@ function location() {
     if (last?.space === space?.id && last?.cwd) return last;
     const sibling = allPanes.find((p) => p.tab === f?.tab && !p.mod && p.cwd);
     const edId = editorIds()[pane.pane];
-    const edRoot = edId ? (shared("mayonaka-editor.files") ?? {})[edId]?.root : null;
+    const edEntry = edId ? editorEntryOf((shared("mayonaka-editor.files") ?? {})[edId]) : null;
+    const edRoot = edEntry?.root ?? null;
     const on = space?.machine ?? null;
     const cwd = sibling?.cwd || edRoot || space?.folder;
     return (last = { cwd, on, space: space?.id });
@@ -46,9 +49,64 @@ const shellQuote = (path) => (/^[\w@%+=:,./~-]+$/.test(path) ? path : `'${path.r
 const rectOf = (b) => (b ? { x: b.x, y: b.y, w: b.width, h: b.height } : null);
 const isJunkName = (name) => name === ".git" || name === ".DS_Store" || name === "Thumbs.db" || name === "desktop.ini" || name.startsWith("._");
 
-function editorTabsOf(entry) {
-  if (Array.isArray(entry?.tabs)) return entry.tabs;
-  return entry?.file ? [{ id: "t0", file: entry.file, on: entry.on ?? null, dirty: Boolean(entry.dirty) }] : [];
+function splitHintFromModifiers(mod) {
+  if (mod?.platform) return "right";
+  if (mod?.alt) return "down";
+  return "auto";
+}
+
+function editorEntryOf(entry) {
+  if (!entry) return null;
+  if (Array.isArray(entry.tabs) && entry.tabs.length > 0) {
+    return entry.tabs.find((t) => t.id === entry.active) ?? entry.tabs[0];
+  }
+  return entry.file ? entry : null;
+}
+
+function computeSmartSplit(tabPanes, editors, f, lastEditor, hint) {
+  if (editors.length === 0) {
+    const anchor = (f?.pane && tabPanes.find((p) => p.pane === f.pane))
+      ?? tabPanes.find((p) => p.focused)
+      ?? tabPanes.find((p) => !p.mod)
+      ?? tabPanes[0];
+    return { pane: anchor?.pane ?? null, direction: hint === "down" ? "down" : "right" };
+  }
+  if (hint === "right" || hint === "down") {
+    const target = (f?.pane && editors.find((p) => p.pane === f.pane))
+      ?? editors.find((p) => p.focused)
+      ?? editors.find((p) => p.pane === lastEditor)
+      ?? editors[editors.length - 1];
+    return { pane: target.pane, direction: hint };
+  }
+  if (editors.length === 1) {
+    return { pane: editors[0].pane, direction: "down" };
+  }
+  const rects = shared("mayonaka-pane.rects") ?? {};
+  const withRects = editors.filter((p) => rects[p.pane]?.w > 0);
+  if (withRects.length >= 2) {
+    const byWidth = [...withRects].sort((a, b) => {
+      const ra = rects[a.pane], rb = rects[b.pane];
+      return rb.w - ra.w || ra.y - rb.y || ra.x - rb.x;
+    });
+    const widest = byWidth[0];
+    if (rects[widest.pane].w >= 520) {
+      return { pane: widest.pane, direction: "right" };
+    }
+    const cols = [];
+    for (const p of [...withRects].sort((a, b) => rects[a.pane].x - rects[b.pane].x || rects[a.pane].y - rects[b.pane].y)) {
+      const r = rects[p.pane];
+      const col = cols.find((c) => Math.abs(c.x - r.x) <= 32);
+      if (col) col.panes.push(p);
+      else cols.push({ x: r.x, panes: [p] });
+    }
+    cols.sort((a, b) => a.panes.length - b.panes.length || a.x - b.x);
+    const chosenCol = cols[0].panes;
+    const bottom = chosenCol[chosenCol.length - 1];
+    return { pane: bottom.pane, direction: "down" };
+  }
+  if (editors.length === 2) return { pane: editors[0].pane, direction: "right" };
+  if (editors.length === 3) return { pane: editors[1].pane, direction: "right" };
+  return { pane: editors[editors.length - 1].pane, direction: "down" };
 }
 
 function fuzzy(q, text) {
@@ -106,21 +164,25 @@ async function fsop(kind, a, b, on) {
   if (r.code !== 0) throw new Error(r.stderr.trim() || "Failed");
 }
 
+class MissingFolderError extends Error {}
+
 async function directory(path, on) {
   const windowsDirectory = async () => {
-    const r = await exec("powershell", ["-NoProfile", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); & { param($p) @(Get-ChildItem -LiteralPath $p -Force -ErrorAction Stop | Where-Object { @('.git', '.DS_Store', 'Thumbs.db', 'desktop.ini') -notcontains $_.Name -and $_.Name -notlike '._*' } | Select-Object -First 501 | ForEach-Object { @{ name=$_.Name; dir=($_.PSIsContainer -and (-not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -or -not $_.LinkType -or ($_.Target -and [IO.Directory]::Exists(([IO.Path]::Combine([IO.Path]::GetDirectoryName($_.FullName), $_.Target[0])))))) } }) | ConvertTo-Json -Compress } '" + path.replace(/['‘’‚‛]/g, "$&$&") + "'"], { on });
+    const r = await exec("powershell", ["-NoProfile", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); & { param($p) if (-not (Test-Path -LiteralPath $p -PathType Container)) { exit 44 }; @(Get-ChildItem -LiteralPath $p -Force -ErrorAction Stop | Where-Object { @('.git', '.DS_Store', 'Thumbs.db', 'desktop.ini') -notcontains $_.Name -and $_.Name -notlike '._*' } | Select-Object -First 501 | ForEach-Object { @{ name=$_.Name; dir=($_.PSIsContainer -and (-not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -or -not $_.LinkType -or ($_.Target -and [IO.Directory]::Exists(([IO.Path]::Combine([IO.Path]::GetDirectoryName($_.FullName), $_.Target[0])))))) } }) | ConvertTo-Json -Compress } '" + path.replace(/['‘’‚‛]/g, "$&$&") + "'"], { on });
+    if (r.code === 44) throw new MissingFolderError("Cannot list this folder");
     if (r.code !== 0) throw new Error(r.stderr || "Cannot list this folder");
     const result = JSON.parse(r.stdout || "[]");
     return Array.isArray(result) ? result : [result];
   };
   if (!on && window()?.platform === "windows") return windowsDirectory();
-  const script = 'n=0; for p in "$1"/* "$1"/.[!.]* "$1"/..?*; do [ -e "$p" ] || [ -L "$p" ] || continue; name=${p##*/}; case $name in .git|.DS_Store|Thumbs.db|desktop.ini|._*) continue;; esac; if [ -d "$p" ]; then kind=d; else kind=f; fi; printf "%s\\0%s\\0" "$kind" "$name"; n=$((n+1)); [ "$n" -gt 500 ] && break; done; test -d "$1"';
+  const script = '[ -d "$1" ] || exit 44; n=0; for p in "$1"/* "$1"/.[!.]* "$1"/..?*; do [ -e "$p" ] || [ -L "$p" ] || continue; name=${p##*/}; case $name in .git|.DS_Store|Thumbs.db|desktop.ini|._*) continue;; esac; if [ -d "$p" ]; then kind=d; else kind=f; fi; printf "%s\\0%s\\0" "$kind" "$name"; n=$((n+1)); [ "$n" -gt 500 ] && break; done; test -d "$1" || exit 44';
   let r;
   try { r = await exec("sh", ["-c", script, "files", path], { on }); }
   catch (e) {
     if (on && String(e).includes("cannot start sh: program not found")) return windowsDirectory();
     throw e;
   }
+  if (r.code === 44) throw new MissingFolderError("Cannot list this folder");
   if (r.code !== 0) throw new Error(r.stderr || "Cannot list this folder");
   const fields = r.stdout.split("\0"), out = [];
   for (let i = 0; i + 1 < fields.length; i += 2) out.push({ name: fields[i + 1], dir: fields[i] === "d" });
@@ -212,6 +274,10 @@ export default class Files extends View {
     this.searchScroll = ScrollHandle.new();
     this.cursor = -1;
     this.cmdHeld = false;
+    this.altHeld = false;
+    this.pendingSplits = [];
+    this.watchHandle = null;
+    this.refreshAgain = false;
 
     this.searching = false;
     this.query = "";
@@ -228,9 +294,12 @@ export default class Files extends View {
       this.searchScroll.scroll_to_item(0);
       cx.notify();
     });
-    this.searchInput.on("submit", (ev, cx) => {
+    this.searchInput.on("submit", (ev) => {
       const hit = this.filteredResults()[this.searchAt];
-      if (hit) this.openFile(hit.path, Boolean(ev?.secondary || this.cmdHeld));
+      if (hit) {
+        const hint = ev?.secondary || this.cmdHeld ? "right" : this.altHeld ? "down" : "auto";
+        this.openFile(hit.path, hint);
+      }
     });
 
     this.refresh(cx);
@@ -250,6 +319,8 @@ export default class Files extends View {
   }
 
   async close() {
+    this.watchHandle?.cancel();
+    this.watchHandle = null;
     this.searchInput?.release();
     this.treeScroll?.release();
     this.searchScroll?.release();
@@ -257,15 +328,20 @@ export default class Files extends View {
 
   watch(root, cx) {
     if (this.on || this.watched === root) return;
+    this.watchHandle?.cancel();
+    this.watchHandle = null;
     this.watched = root;
     const context = this.context;
     cx.spawn(async (cx) => {
       try {
         while (this.context === context) {
-          await watchFolder(root);
+          const w = watchFolder(root);
+          this.watchHandle = w;
+          await w;
+          if (this.watchHandle === w) this.watchHandle = null;
           if (this.current(context)) {
             this.indexCache = null;
-            this.refresh(cx);
+            this.refresh(cx, true);
           }
         }
       } catch {
@@ -278,19 +354,40 @@ export default class Files extends View {
     return this.context === context && key() === context.key;
   }
 
-  async loadFolder(path, context) {
-    const { on, cwd: root } = context;
-    const entries = await directory(path ? `${root}/${path}` : root, on);
-    if (!this.current(context) || (path && !this.folders.has(path))) return;
-    const used = [...this.entries.entries()].filter(([p]) => p !== path).reduce((n, [, e]) => n + e.length, 0);
-    this.entries.set(path, entries.slice(0, Math.max(0, Math.min(PER_FOLDER, TOTAL - used))).sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name)));
-    if (entries.length > PER_FOLDER || used + entries.length > TOTAL) this.limited = true;
+  pruneFolder(path) {
+    for (const folder of [...this.folders]) {
+      if (folder === path || folder.startsWith(path + "/")) {
+        this.folders.delete(folder);
+        this.entries.delete(folder);
+      }
+    }
+    this.entries.delete(path);
   }
 
-  refresh(cx) {
+  async loadFolder(path, context) {
+    const { on, cwd: root } = context;
+    try {
+      const entries = await directory(path ? `${root}/${path}` : root, on);
+      if (!this.current(context) || (path && !this.folders.has(path))) return true;
+      const used = [...this.entries.entries()].filter(([p]) => p !== path).reduce((n, [, e]) => n + e.length, 0);
+      this.entries.set(path, entries.slice(0, Math.max(0, Math.min(PER_FOLDER, TOTAL - used))).sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name)));
+      if (entries.length > PER_FOLDER || used + entries.length > TOTAL) this.limited = true;
+      return true;
+    } catch (e) {
+      if (path && e instanceof MissingFolderError) {
+        if (this.current(context)) this.pruneFolder(path);
+        return false;
+      }
+      throw e;
+    }
+  }
+
+  refresh(cx, queue = false) {
     if (this.dragging) return;
     const { cwd, on } = location(), next = key();
     if (next !== this.context?.key) {
+      this.watchHandle?.cancel();
+      this.watchHandle = null;
       if (this.context) this.saved.set(this.context.key, { folders: this.folders, file: this.file });
       const saved = this.saved.get(next);
       this.context = { key: next, cwd, on }; this.root = cwd; this.on = on;
@@ -298,18 +395,29 @@ export default class Files extends View {
       this.pending = new Set(); this.marks = {}; this.ignored = new Set(); this.repo = null;
       this.indexCache = null; this.indexing = false; this.cursor = -1;
       this.show(null); this.watched = null; this.error = null; this.limited = false;
-      this.loading = false;
+      this.loading = false; this.refreshAgain = false;
       if (saved?.file) this.show(saved.file, cx);
     }
-    if (!cwd || this.loading) return;
+    if (!cwd) return;
+    if (this.loading) {
+      if (queue) this.refreshAgain = true;
+      return;
+    }
     const context = this.context;
     this.loading = true;
+    this.refreshAgain = false;
     this.limited = false;
     cx.spawn(async (cx) => {
       try {
-        for (const path of ["", ...this.folders]) {
+        await this.loadFolder("", context);
+        if (!this.current(context)) return;
+        let subError = null;
+        const folders = [...this.folders].sort((a, b) => a.split("/").length - b.split("/").length);
+        for (const path of folders) {
           if (!this.current(context)) return;
-          await this.loadFolder(path, context);
+          if (!this.folders.has(path)) continue;
+          try { await this.loadFolder(path, context); }
+          catch (e) { if (!subError) subError = String(e); }
         }
         const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on }).catch(() => null);
         const marks = {}, ignored = new Set(), repo = top?.code === 0 ? top.stdout.trim() : null;
@@ -326,11 +434,19 @@ export default class Files extends View {
           }
         }
         if (!this.current(context)) return;
-        this.marks = marks; this.ignored = ignored; this.repo = repo; this.error = null;
+        this.marks = marks; this.ignored = ignored; this.repo = repo; this.error = subError;
         this.watch(cwd, cx);
         if (this.searching && !this.indexCache) this.ensureSearchIndex(cx);
       } catch (e) { if (this.current(context)) this.error = String(e); }
-      finally { if (this.context === context) this.loading = false; cx.notify(); }
+      finally {
+        if (this.context === context) {
+          this.loading = false;
+          const again = this.refreshAgain;
+          this.refreshAgain = false;
+          if (again) this.refresh(cx);
+        }
+        cx.notify();
+      }
     });
   }
 
@@ -444,18 +560,17 @@ export default class Files extends View {
 
   toggle(path, cx) {
     if (this.folders.has(path)) {
-      for (const folder of [...this.folders]) if (folder === path || folder.startsWith(path + "/")) {
-        this.folders.delete(folder);
-        this.entries.delete(folder);
-      }
+      this.pruneFolder(path);
     } else {
       this.folders.add(path);
       if (!this.entries.has(path) && !this.pending.has(path)) {
         const context = this.context;
         this.pending.add(path);
         cx.spawn(async (cx) => {
-          try { await this.loadFolder(path, context); }
-          catch (e) { if (this.current(context)) this.error = String(e); }
+          try {
+            const ok = await this.loadFolder(path, context);
+            if (!ok && this.current(context)) this.refresh(cx, true);
+          } catch (e) { if (this.current(context)) this.error = String(e); }
           finally { if (this.context === context) this.pending.delete(path); cx.notify(); }
         });
       }
@@ -463,55 +578,109 @@ export default class Files extends View {
     cx.notify();
   }
 
-  claimSplit() {
-    if (!this.pendingId) return;
-    const ids = editorIds(), fresh = panes().find((p) => p.mod === "mayonaka-editor" && !ids[p.pane]);
-    if (!fresh) return;
-    setShared("mayonaka-editor.ids", { ...ids, [fresh.pane]: this.pendingId });
-    this.lastEditor = fresh.pane; this.pendingId = null;
+  activeTabId() {
+    return focused()?.tab ?? spaces().find((s) => s.active)?.tabs?.find((t) => t.active)?.id ?? null;
   }
 
-  openFile(path, split) {
-    const file = `${this.root}/${path}`, on = this.on ?? null, root = this.root, f = focused(), ids = editorIds();
-    const filesMap = shared("mayonaka-editor.files") ?? {};
-    const editors = panes().filter((p) => p.mod === "mayonaka-editor" && p.tab === f?.tab && ids[p.pane]);
-    if (!split) {
-      // First check whether any editor pane in this workspace tab already holds this file so we focus its tab instead of duplicating.
-      const existingPane = editors.find((p) =>
-        editorTabsOf(filesMap[ids[p.pane]]).some((t) => t.file === file && (t.on ?? null) === on),
-      );
-      const target = existingPane
-        ?? editors.find((p) => p.focused)
-        ?? editors.find((p) => p.pane === this.lastEditor)
-        ?? editors[editors.length - 1];
-      if (target) {
-        setShared("mayonaka-editor.open", { id: ids[target.pane], file, on, root, n: Date.now() });
-        this.lastEditor = target.pane;
-        run("pane.focus", { pane: target.pane });
+  claimSplit() {
+    if (!this.pendingSplits?.length) return;
+    const edPanes = panes().filter((p) => p.mod === "mayonaka-editor");
+    const liveSet = new Set(edPanes.map((p) => p.pane));
+    const ids = {};
+    let changed = false;
+    for (const [pane, eid] of Object.entries(editorIds())) {
+      if (liveSet.has(pane)) ids[pane] = eid;
+      else changed = true;
+    }
+    const unclaimed = edPanes.filter((p) => !ids[p.pane]);
+    if (!unclaimed.length) {
+      if (changed) setShared("mayonaka-editor.ids", ids);
+      return;
+    }
+    const rects = { ...(shared("mayonaka-pane.rects") ?? {}) };
+    let rectsChanged = false;
+    while (this.pendingSplits.length && unclaimed.length) {
+      const item = this.pendingSplits.shift();
+      const fresh = unclaimed.shift();
+      ids[fresh.pane] = item.id;
+      this.lastEditor = fresh.pane;
+      changed = true;
+      const src = item.fromPane ? rects[item.fromPane] : null;
+      if (src && src.w > 0) {
+        if (item.direction === "right") {
+          const halfW = Math.max(120, Math.floor((src.w - 8) / 2));
+          rects[item.fromPane] = { ...src, w: halfW };
+          rects[fresh.pane] = { x: src.x + halfW + 8, y: src.y, w: halfW };
+        } else {
+          rects[fresh.pane] = { x: src.x, y: src.y + 40, w: src.w };
+        }
+        rectsChanged = true;
+      }
+    }
+    if (changed) setShared("mayonaka-editor.ids", ids);
+    if (rectsChanged) setShared("mayonaka-pane.rects", rects);
+  }
+
+  openAbsoluteFile({ file, on = null, root = null, mode = null }, splitHint = "auto") {
+    if (!file) return;
+    this.claimSplit();
+    const hint = splitHint === true ? "right" : splitHint === false || !splitHint ? "auto" : splitHint;
+    const tabId = this.activeTabId();
+    const allPanes = panes(), f = focused(), ids = editorIds(), filesMap = shared("mayonaka-editor.files") ?? {};
+    const tabPanes = tabId ? allPanes.filter((p) => p.tab === tabId) : [];
+    const editors = tabPanes.filter((p) => p.mod === "mayonaka-editor" && ids[p.pane]);
+    if (hint === "auto") {
+      const existing = editors.find((p) => {
+        const info = editorEntryOf(filesMap[ids[p.pane]]);
+        return info?.file === file && (info.on ?? null) === (on ?? null);
+      });
+      if (existing) {
+        this.lastEditor = existing.pane;
+        run("pane.focus", { pane: existing.pane });
+        return;
+      }
+      const empty = editors.find((p) => !editorEntryOf(filesMap[ids[p.pane]])?.file);
+      if (empty) {
+        setShared("mayonaka-editor.open", { id: ids[empty.pane], file, on, root, ...(mode ? { mode } : {}), n: Date.now() });
+        this.lastEditor = empty.pane;
+        run("pane.focus", { pane: empty.pane });
         return;
       }
     }
-    const target = editors.find((p) => p.focused) ?? editors.find((p) => p.pane === this.lastEditor) ?? editors[editors.length - 1];
+    const { pane, direction } = computeSmartSplit(tabPanes, editors, f, this.lastEditor, hint);
     const id = `e${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-    this.pendingId = id;
-    run("pane.split", { direction: "right", ...(target ? { pane: target.pane } : {}), mod: "mayonaka-editor", props: { id, file, on, root } });
+    this.pendingSplits.push({ id, fromPane: pane, direction });
+    run("pane.split", {
+      direction,
+      ...(pane ? { pane } : {}),
+      mod: "mayonaka-editor",
+      props: { id, file, on, root, ...(mode ? { mode } : {}) },
+    });
     this.claimSplit();
   }
 
+  openFile(path, splitHint = "auto") {
+    if (!this.root) return;
+    this.openAbsoluteFile({ file: `${this.root}/${path}`, on: this.on ?? null, root: this.root }, splitHint);
+  }
+
   openState() {
-    const f = focused(), allPanes = panes(), ids = editorIds(), filesMap = shared("mayonaka-editor.files") ?? {};
-    const editors = allPanes.filter((p) => p.mod === "mayonaka-editor" && p.tab === f?.tab && ids[p.pane]);
+    const tabId = this.activeTabId(), f = focused(), allPanes = panes(), ids = editorIds(), filesMap = shared("mayonaka-editor.files") ?? {};
+    const editors = tabId ? allPanes.filter((p) => p.mod === "mayonaka-editor" && p.tab === tabId && ids[p.pane]) : [];
     const fp = f?.pane && allPanes.find((p) => p.pane === f.pane);
-    const activePane = fp?.mod === "mayonaka-editor" ? fp.pane : this.lastEditor;
+    const lastId = tabId ? (shared("mayonaka-editor.last") ?? {})[tabId] : null;
+    const activePane = fp?.mod === "mayonaka-editor"
+      ? fp.pane
+      : (editors.find((p) => ids[p.pane] === lastId)?.pane ?? (editors.some((p) => p.pane === this.lastEditor) ? this.lastEditor : null));
     const activeId = activePane ? ids[activePane] : null;
-    const activeFile = activeId ? filesMap[activeId]?.file ?? null : null;
+    const activeFile = activeId ? editorEntryOf(filesMap[activeId])?.file ?? null : null;
     const openSet = new Map();
     const curOn = this.on ?? null;
     for (const p of editors) {
-      for (const tab of editorTabsOf(filesMap[ids[p.pane]])) {
-        if (tab?.file && (tab.on ?? null) === curOn) {
-          openSet.set(tab.file, { dirty: Boolean(tab.dirty) });
-        }
+      const info = editorEntryOf(filesMap[ids[p.pane]]);
+      if (info?.file && (info.on ?? null) === curOn) {
+        const prev = openSet.get(info.file);
+        openSet.set(info.file, { dirty: Boolean(prev?.dirty || info.dirty) });
       }
     }
     return { activeFile, openSet };
@@ -545,7 +714,8 @@ export default class Files extends View {
       add("New Folder…", "new-folder", "folder-plus");
     } else {
       add("Open", "open", "file-text");
-      add("Open to the Side", "open-split", "mods/mayonaka-pane/split-right.svg");
+      add("Open to the Right", "open-right", "mods/mayonaka-pane/split-right.svg");
+      add("Open Below", "open-down", "mods/mayonaka-pane/split-down.svg");
       if (fromSearch) add("Reveal in Tree", "reveal-tree", "folder");
     }
     if (local && !dir) add("Open with Default App", "open-default", "external-link", true);
@@ -598,8 +768,9 @@ export default class Files extends View {
     const fail = (title, e) => notify({ title, body: String(e?.message ?? e), level: "error" });
     const platform = window()?.platform;
     switch (action) {
-      case "open": return this.openFile(path, false);
-      case "open-split": return this.openFile(path, true);
+      case "open": return this.openFile(path, "auto");
+      case "open-right": return this.openFile(path, "right");
+      case "open-down": return this.openFile(path, "down");
       case "reveal-tree": return this.revealInTree(path, cx);
       case "drop": return this.drop(pane, path, cx);
       case "refresh": this.indexCache = null; return this.refresh(cx);
@@ -623,7 +794,7 @@ export default class Files extends View {
           const target = path ? `${path}/${name}` : name;
           await fsop(action, join(root, target), null, on);
           if (path && !this.folders.has(path) && this.current(context)) this.toggle(path, cx);
-          if (action === "new-file" && this.current(context)) this.openFile(target, false);
+          if (action === "new-file" && this.current(context)) this.openFile(target, "auto");
         } else if (action === "rename") {
           const target = parentOf(path) ? `${parentOf(path)}/${name}` : name;
           const dest = join(root, target);
@@ -649,14 +820,12 @@ export default class Files extends View {
         } else if (action === "delete") {
           await fsop("delete", abs, null, on);
           if (this.current(context)) {
-            for (const folder of [...this.folders]) if (folder === path || folder.startsWith(path + "/")) {
-              this.folders.delete(folder); this.entries.delete(folder);
-            }
+            this.pruneFolder(path);
             setShared("mayonaka-editor.deleted", { path: abs, dir: Boolean(dir), on: on ?? null, n: Date.now() });
           }
         } else return;
         this.indexCache = null;
-        if (this.current(context)) { this.loading = false; this.refresh(cx); }
+        if (this.current(context)) { this.refresh(cx, true); }
       } catch (e) {
         fail(action === "delete" ? `Couldn't delete ${baseName(path)}` : action === "rename" ? `Couldn't rename ${baseName(path)}` : action === "move" ? `Couldn't move ${baseName(path)}` : `Couldn't create ${name}`, e);
       } finally { cx.notify(); }
@@ -712,7 +881,7 @@ export default class Files extends View {
         .on_click((e, cx) => {
           this.cursor = i;
           if (dir) this.toggle(path, cx);
-          else this.openFile(path, e.modifiers.platform);
+          else this.openFile(path, splitHintFromModifiers(e.modifiers));
         })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.openMenu(path, dir, false); })
         .on_mouse_down("left", (e) => { this.press = { path, dir, x: e.position.x, y: e.position.y, index: i, total: flat.length, bounds: e.bounds }; })
@@ -738,7 +907,7 @@ export default class Files extends View {
         .tooltip(path)
         .on_click((e, cx) => {
           this.searchAt = i;
-          this.openFile(path, e.modifiers.platform);
+          this.openFile(path, splitHintFromModifiers(e.modifiers));
           cx.notify();
         })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.openMenu(path, false, true); })
@@ -757,6 +926,7 @@ export default class Files extends View {
 
   onKeyDown(e, flat, results, cx) {
     this.cmdHeld = Boolean(e.modifiers.platform);
+    this.altHeld = Boolean(e.modifiers.alt);
     if (this.searching) {
       const k = e.key;
       if (k === "escape") {
@@ -826,7 +996,7 @@ export default class Files extends View {
     } else if (k === "enter" && this.cursor >= 0 && flat[this.cursor]) {
       const row = flat[this.cursor];
       if (row.dir) this.toggle(row.path, cx);
-      else this.openFile(row.path, e.modifiers.platform);
+      else this.openFile(row.path, splitHintFromModifiers(e.modifiers));
       cx.stop_propagation();
     } else if (k === "escape" && this.cursor >= 0) {
       this.cursor = -1;
@@ -914,7 +1084,7 @@ export default class Files extends View {
     const state = this.openState();
 
     return v_flex().id("files").track_focus(this.handle).size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
-      .on_modifiers_changed((e) => { this.cmdHeld = Boolean(e.modifiers.platform); })
+      .on_modifiers_changed((e) => { this.cmdHeld = Boolean(e.modifiers.platform); this.altHeld = Boolean(e.modifiers.alt); })
       .on_key_down((e, cx) => this.onKeyDown(e, flat, results, cx))
       .child(this.renderHeader(t, cx))
       .when(!this.file && this.searching, (el) => el.child(

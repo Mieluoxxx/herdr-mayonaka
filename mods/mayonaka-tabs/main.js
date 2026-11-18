@@ -1,6 +1,6 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, panes, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand } from "herdr";
+import { spaces, panes, focused, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -11,12 +11,45 @@ function find(node, id) {
   return null;
 }
 
+function pickReopenSplit(tabPanes, editors, f) {
+  if (editors.length === 0) {
+    const anchor = (f?.pane && tabPanes.find((p) => p.pane === f.pane))
+      ?? tabPanes.find((p) => p.focused)
+      ?? tabPanes.find((p) => !p.mod)
+      ?? tabPanes[0];
+    return { pane: anchor?.pane ?? null, direction: "right" };
+  }
+  if (editors.length === 1) return { pane: editors[0].pane, direction: "down" };
+  const rects = shared("mayonaka-pane.rects") ?? {};
+  const withRects = editors.filter((p) => rects[p.pane]?.w > 0);
+  if (withRects.length >= 2) {
+    const byWidth = [...withRects].sort((a, b) => {
+      const ra = rects[a.pane], rb = rects[b.pane];
+      return rb.w - ra.w || ra.y - rb.y || ra.x - rb.x;
+    });
+    if (rects[byWidth[0].pane].w >= 520) return { pane: byWidth[0].pane, direction: "right" };
+    const cols = [];
+    for (const p of [...withRects].sort((a, b) => rects[a.pane].x - rects[b.pane].x || rects[a.pane].y - rects[b.pane].y)) {
+      const r = rects[p.pane];
+      const col = cols.find((c) => Math.abs(c.x - r.x) <= 32);
+      if (col) col.panes.push(p);
+      else cols.push({ x: r.x, panes: [p] });
+    }
+    cols.sort((a, b) => a.panes.length - b.panes.length || a.x - b.x);
+    const chosen = cols[0].panes;
+    return { pane: chosen[chosen.length - 1].pane, direction: "down" };
+  }
+  if (editors.length === 2) return { pane: editors[0].pane, direction: "right" };
+  if (editors.length === 3) return { pane: editors[1].pane, direction: "right" };
+  return { pane: editors[editors.length - 1].pane, direction: "down" };
+}
+
 export default class Tabs extends View {
   init(_props, cx) {
     this.pressed = null;
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
     // Keys press the same side-panel toggles as the buttons in this bar.
-    cx.spawn(async () => {
+    cx.spawn(async (cx) => {
       for (;;) {
         const id = await nextCommand();
         if (id === "files-search") {
@@ -24,11 +57,49 @@ export default class Tabs extends View {
           run("layout.show", { id: "panel" });
           setShared("mayonaka-files.search", { n: Date.now() });
           cx.notify();
+        } else if (id === "reopen-file") {
+          this.reopenClosedFile(cx);
+          cx.notify();
         } else if (id) {
           this.togglePanel(id);
           cx.notify();
         }
       }
+    });
+  }
+
+  reopenClosedFile(cx) {
+    const list = shared("mayonaka-editor.closed");
+    if (!Array.isArray(list) || !list.length) return;
+    const item = list[list.length - 1];
+    setShared("mayonaka-editor.closed", list.slice(0, -1));
+    if (!item?.file) return;
+    const f = focused();
+    const tabId = f?.tab ?? spaces().find((s) => s.active)?.tabs?.find((t) => t.active)?.id;
+    const allPanes = panes(), ids = shared("mayonaka-editor.ids") ?? {}, filesMap = shared("mayonaka-editor.files") ?? {};
+    const tabPanes = tabId ? allPanes.filter((p) => p.tab === tabId) : [];
+    const editors = tabPanes.filter((p) => p.mod === "mayonaka-editor" && ids[p.pane]);
+    const existing = editors.find((p) => {
+      const info = filesMap[ids[p.pane]];
+      return info?.file === item.file && (info.on ?? null) === (item.on ?? null);
+    });
+    if (existing) {
+      run("pane.focus", { pane: existing.pane });
+      return;
+    }
+    const { pane, direction } = pickReopenSplit(tabPanes, editors, f);
+    const id = `e${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    run("pane.split", {
+      direction,
+      ...(pane ? { pane } : {}),
+      mod: "mayonaka-editor",
+      props: { id, file: item.file, on: item.on ?? null, root: item.root ?? null, ...(item.mode ? { mode: item.mode } : {}) },
+    });
+    cx.spawn(async () => {
+      await cx.sleep(60);
+      const curIds = shared("mayonaka-editor.ids") ?? {};
+      const fresh = panes().find((p) => p.tab === tabId && p.mod === "mayonaka-editor" && !curIds[p.pane]);
+      if (fresh) setShared("mayonaka-editor.ids", { ...curIds, [fresh.pane]: id });
     });
   }
 

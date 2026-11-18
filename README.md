@@ -16,33 +16,37 @@ of every branch.
   open-file dots and one-letter git marks (`M` `A` `D` `U`), plus instant fuzzy
   search across the whole repository (`⌘⌥F`, `/`, `⌘F`, or just start typing in
   the tree; `.*` includes git-ignored files). Right-click for open, open to the
-  side, reveal in tree or Finder, copy path, rename, delete, new file or folder.
-  Drag a row onto a folder to move it, or onto a terminal to type its path there.
-- **Editor pane**: click files to open them as tabs beside the terminals
-  (`⌘`-click splits another editor pane to the right; clicking an already open
-  file focuses its tab instead of replacing anything). Tabs sharing a file name
-  show their distinguishing parent folder, reorder by dragging, and close on
-  middle-click or `⌘W` (`⌘⇧T` reopens). Markdown opens as a rendered preview you
-  can edit block by block (over 256 KiB, as source first); images open as a
-  picture; everything else opens as source. An edit saves itself shortly after
-  your last keystroke (half a second up to 256 KiB, 1.5 s up to 2 MiB, 3 s past
-  that), in a remote space on that machine; `⌘S` saves at once.
+  right, open below, reveal in tree or Finder, copy path, rename, delete, new
+  file or folder. Drag a row onto a folder to move it, or onto a terminal to
+  type its path there.
+- **File cards**: every opened file is its own rounded card pane beside the
+  terminals — the first file splits to the right of the terminal, subsequent
+  files tile automatically into a balanced vertical stack and `2×2` grid without
+  squishing your terminal (`⌘`-click splits right, `⌥`-click splits below;
+  clicking an already open file focuses its card instead of replacing anything).
+  Each file card uses a single 30px header showing its Material icon, file name,
+  parent path (`mods › …`), unsaved dot, preview/source toggle, and hover split /
+  zoom / close controls. Markdown opens as a rendered preview you can edit block
+  by block (over 256 KiB, as source first); images open as a picture; everything
+  else opens as source. An edit saves itself shortly after your last keystroke
+  (half a second up to 256 KiB, 1.5 s up to 2 MiB, 3 s past that), in a remote
+  space on that machine; `⌘S` saves at once.
 - **Graph**: local branches, remote branches and tags as colored lanes. Click a
   commit for its message and changed files. It never writes to the repository.
 - **Status bar**: the current agent's session, plus CPU load and used memory of
   the machine the shown space lives on.
 - **Command palette**: `⌘⇧P` opens Herdr's palette with a Mayonaka group on
   top: toggle the Files, Changes and Graph panels, find a file in the Files
-  panel, and save, switch preview, close tabs, reopen a closed tab or turn auto
-  save off and on when the tab has an editor. With
+  panel, reopen a closed file, and save, switch preview, close the file card or
+  turn auto save off and on when the tab has an editor card. With
   [terminal-browser](https://github.com/zenbu-labs/terminal-browser) installed
   it also opens that browser in a split to the right or in a new tab.
 - **New tab menu**: the `+` in the tab bar lists Browser under Terminal when
   terminal-browser is installed, and opens it in a tab of its own.
 - **Keys**: `⌘⌥B` toggles the Files panel, `⌘⌥F` searches files, `⌘⇧P` opens the
-  palette, and in the editor `⌘S` saves, `⌘⇧V` switches between preview and
-  source, `⌘W` closes the active file tab, `⌘⇧T` reopens a closed tab, and
-  `⌃Tab` / `⌃⇧Tab` steps through file tabs.
+  palette, `⌘⌥←/→/↑/↓` moves focus between terminal and file cards (`⌘⌥⇧←/→/↑/↓`
+  swaps cards), and in an editor card `⌘S` saves, `⌘⇧V` switches between preview
+  and source, `⌘W` closes the file card, and `⌘⇧T` reopens the last closed file.
 
 [RECIPE.md](RECIPE.md) describes every region, size and behavior, and is the
 brief to rebuild the layout from scratch.

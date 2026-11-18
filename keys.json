@@ -4,14 +4,14 @@
     "cmd-alt-f": "mayonaka-tabs.files-search",
     "cmd-shift-p": "mod.open:mayonaka-palette"
   },
+  "mod:mayonaka-files": {
+    "cmd-f": "mayonaka-files.search",
+    "cmd-shift-t": "mayonaka-tabs.reopen-file"
+  },
   "mod:mayonaka-editor": {
     "cmd-s": "mayonaka-editor.save",
     "cmd-shift-v": "mayonaka-editor.toggle",
-    "cmd-w": "mayonaka-editor.close-tab",
-    "cmd-shift-t": "mayonaka-editor.reopen-tab",
-    "ctrl-tab": "mayonaka-editor.next-tab",
-    "ctrl-shift-tab": "mayonaka-editor.prev-tab",
-    "ctrl-pagedown": "mayonaka-editor.next-tab",
-    "ctrl-pageup": "mayonaka-editor.prev-tab"
+    "cmd-w": "mayonaka-editor.close-pane",
+    "cmd-shift-t": "mayonaka-tabs.reopen-file"
   }
 }
