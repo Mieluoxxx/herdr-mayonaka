@@ -3,8 +3,8 @@
 A dark, quiet layout for the [Herdr](https://herdr.dev) desktop app: a slim
 sidebar with your spaces and agents, tab pills across the top, and terminals as
 rounded cards. A panel on the right holds a file browser that opens files in an
-editor pane beside the terminals, the shipped Changes panel, and a lane graph
-of every branch.
+editor pane beside the terminals, the shipped Changes panel, a lane graph of
+every branch, and a native Mizar agent view.
 
 ![Mayonaka](preview.png)
 
@@ -33,17 +33,23 @@ of every branch.
   space on that machine; `⌘S` saves at once.
 - **Graph**: local branches, remote branches and tags as colored lanes. Click a
   commit for its message and changed files. It never writes to the repository.
+- **Mizar**: connects to a local Mizar process (`~/.mizar/run/p-*.json`) over
+  authenticated `127.0.0.1` TCP (`auth.hello`), rendering streaming markdown,
+  reasoning, tool diffs/summaries, inline high-risk approvals, subagent
+  drilling, lineage tree forks, and queued inputs (`⌘⌥M` or split card).
 - **Status bar**: the current agent's session, plus CPU load and used memory of
   the machine the shown space lives on.
 - **Command palette**: `⌘⇧P` opens Herdr's palette with a Mayonaka group on
-  top: toggle the Files, Changes and Graph panels, find a file in the Files
+  top: toggle the Files, Changes, Graph and Mizar panels, open a Mizar card to
+  the right, find a file in the Files
   panel, reopen a closed file, and save, switch preview, close the file card or
   turn auto save off and on when the tab has an editor card. With
   [terminal-browser](https://github.com/zenbu-labs/terminal-browser) installed
   it also opens that browser in a split to the right or in a new tab.
 - **New tab menu**: the `+` in the tab bar lists Browser under Terminal when
   terminal-browser is installed, and opens it in a tab of its own.
-- **Keys**: `⌘⌥B` toggles the Files panel, `⌘⌥F` searches files, `⌘⇧P` opens the
+- **Keys**: `⌘⌥B` toggles the Files panel, `⌘⌥F` searches files, `⌘⌥M` toggles
+  the Mizar panel, `⌘⇧P` opens the
   palette, `⌘⌥←/→/↑/↓` moves focus between terminal and file cards (`⌘⌥⇧←/→/↑/↓`
   swaps cards), and in an editor card `⌘S` saves, `⌘⇧V` switches between preview
   and source, `⌘W` closes the file card, and `⌘⇧T` reopens the last closed file.
@@ -92,6 +98,10 @@ These mods run programs and touch files, on the machine the pane lives on:
   `cache/mayonaka-editor/save/` under the app's home. It reads the file first and
   refuses the save if it changed since it was opened.
 - `mayonaka-gitgraph` runs read-only `git` commands.
+- `mayonaka-mizar` reads `~/.mizar/run/p-*.json` (`0600` token) and connects
+  strictly to `127.0.0.1` loopback Mizar processes to stream sessions, submit
+  prompts, fork branches, and resolve approvals. It never connects to external
+  hosts.
 - `mayonaka-status` runs `iostat`, `vm_stat` and `sysctl` on macOS, or reads
   `/proc` on Linux, every 5 seconds.
 
@@ -101,14 +111,16 @@ These mods run programs and touch files, on the machine the pane lives on:
   own network access and, until you turn it off, usage telemetry
   (`terminal-browser config set telemetry.usage off`).
 
-None of the mods reaches the network itself.
+None of the mods reaches external networks itself (except `terminal-browser`
+if launched, and `mayonaka-mizar` talking over `127.0.0.1` loopback TCP to local
+Mizar processes).
 
 ## Repository
 
 | Path | What it is |
 |---|---|
 | `layouts/` | The layout tree and the small drawing Settings shows for it |
-| `mods/` | The eleven mods the layout and its keys use |
+| `mods/` | The twelve mods the layout and its keys use |
 | `keys.json` | The keys the mods expect |
 | `RECIPE.md` | The full brief: what you see, how it behaves, what it is built from |
 | `tools/material-icons.py` | Regenerates the file icons and their lookup table |

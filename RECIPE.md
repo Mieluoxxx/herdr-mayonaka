@@ -3,9 +3,9 @@
 A dark, quiet Herdr workspace: a sidebar with your spaces and agents, tab pills
 across the top, and every terminal as a rounded card. A panel opens on the right
 with a file browser that edits files in a code pane beside the terminals, the
-shipped Changes list, and a lane graph of every branch. A status bar shows the
-current agent and the machine's load, and ⌘⇧P opens a command palette with the
-layout's own commands on top.
+shipped Changes list, a lane graph of every branch, and a Mizar agent panel. A
+status bar shows the current agent and the machine's load, and ⌘⇧P opens a
+command palette with the layout's own commands on top.
 
 ![Mayonaka](preview.png)
 
@@ -32,8 +32,8 @@ type comes from the person's settings, else Herdr's.
     highlight on hover.
 - **Tab bar, 42px**, `chrome` background, 1px `border` line below it; it drags the
   window. From the left: one pill per tab of the shown space, a 26px `+`, then
-  three 26px panel buttons *Files*, *Changes* and *Graph* (12px text, 14px icon;
-  the one whose panel is showing has a `selected` background). Where the system
+  four 26px panel buttons *Files*, *Changes*, *Graph* and *Mizar* (12px text,
+  14px icon; the one whose panel is showing has a `selected` background). Where the system
   draws no window buttons (Linux, Windows) three more 26px buttons close the row:
   minimize, maximize or restore, close.
   - A pill is 29px tall with a 7px radius and 12.8px text: the 14px icon of the
@@ -76,6 +76,13 @@ type comes from the person's settings, else Herdr's.
     lanes, in 24px rows: the lane graph, ref pills (`HEAD → main · origin`,
     `◆ tag`), the subject, the short SHA and the date. An *Uncommitted Changes*
     row comes first when the tree is dirty. Merges are hollow dots, HEAD is a ring.
+  - *Mizar*: native GPUI session view (`mayonaka-mizar`) discovering live local
+    Mizar processes in `~/.mizar/run/p-*.json`, authenticating over `127.0.0.1`
+    TCP (`auth.hello`), and rendering streaming markdown/reasoning, structured
+    tool diffs and summaries, sticky high-risk approvals (`Allow once` / `Allow
+    session` / `Deny`), subagent inspection, fork tree navigation, and queued
+    composer modes (`Send` / `Steer` / `Queue` / `Stop`). Can also be opened as
+    a split pane card styled by `mayonaka-pane` via `shared("mayonaka-mizar.status")`.
 - **Status bar, bottom, 28px**: `chrome` background, 1px `border` line above it,
   11.8px `muted` text, 14px side padding. From the left: the machine (monitor
   icon and *This computer*, or a server icon and the remote's name), the git
@@ -240,8 +247,9 @@ type comes from the person's settings, else Herdr's.
   the nth installed one. *New space* runs `space.new`; the two worktree rows open
   the shipped `worktree` dialog. Esc closes it.
 - **Keys**: ⌘⌥B toggles the Files panel, ⌘⌥F searches files in the Files panel,
-  ⌘⇧P opens the palette, and in the editor ⌘S saves, ⌘⇧V switches preview and
-  source, ⌘W closes the file card, and ⌘⇧T reopens the last closed file.
+  ⌘⌥M toggles the Mizar panel, ⌘⇧P opens the palette, and in the editor ⌘S
+  saves, ⌘⇧V switches preview and source, ⌘W closes the file card, and ⌘⇧T
+  reopens the last closed file.
 
 ## Built from
 
@@ -263,8 +271,8 @@ type comes from the person's settings, else Herdr's.
     border, focus: 1px accent, radius: 10, gap: 8, lone: true }`, and `panel`: a
     column, 368px, min 280, max 900, `hidden: true`, holding the `panel-body`
     stack (active `files`) whose children are blocks `files`
-    (`mayonaka-files`), `changes` (the shipped `changes`) and `gitgraph`
-    (`mayonaka-gitgraph`).
+    (`mayonaka-files`), `changes` (the shipped `changes`), `gitgraph`
+    (`mayonaka-gitgraph`) and `mizar` (`mayonaka-mizar`).
 - `mods/mayonaka-chrome/`: a clone of the shipped `workspace-chrome` (0.1.13),
   used twice: without `props.footer` the rail (`mods/mayonaka-chrome/*.svg`
   icons, `run("mod.open", {name: "picker"})`), with it the two footer rows
@@ -287,8 +295,8 @@ type comes from the person's settings, else Herdr's.
   is to `shared("mayonaka-pane.rects")`; `mayonaka-files` uses these rectangles
   both for drag targets and for smart card tiling.
 - `mods/mayonaka-tabs/`: a `mod.clone` of the shipped `tabs` with four changes.
-  The *Graph* button is shown when the layout's `panel-body` has a `gitgraph`
-  child (the other two follow `shared("workspace.panels")`, default `["files",
+  The *Graph* and *Mizar* buttons are shown when the layout's `panel-body` has
+  `gitgraph` and `mizar` children (the other two follow `shared("workspace.panels")`, default `["files",
   "changes"]`). The `+` opens `mayonaka-new-menu` as a 250×543 popup in place of
   `new-menu`. `nextCommand()` handles `files-search` (selecting and showing the
   Files panel and setting `shared("mayonaka-files.search")`), `reopen-file`
@@ -390,6 +398,13 @@ type comes from the person's settings, else Herdr's.
   8px right padding is the gap to the panel. A `Popup` has no dismissal of its own,
   so the card's `on_mouse_down_out` closes it, and a press on the card stops
   propagating so it never reaches the rows underneath. Its icon is `git-graph.svg`.
+- `mods/mayonaka-mizar/`: native GPUI Mizar agent view (`focusable: true`,
+  `mizar.svg`, shared client module `rpc.js` + `rpc.test.mjs`). Scans
+  `~/.mizar/run/p-*.json`, restricts TCP connections to loopback hosts, clears
+  first-frame `auth.hello` with the `0600` per-PID `rpc_token`, subscribes via
+  `session.subscribe`, applies all 8 server notification types atomically, and
+  publishes `shared("mayonaka-mizar.status")` so split Mizar cards show title,
+  cwd, and spinner/`Needs you` badges in `mayonaka-pane`.
 - `mods/mayonaka-status/`: the status bar. `spaces()` for the machine and branch,
   `agents()` and `focused()` for the current agent (its `program.icon` and its
   title with the leading status glyph stripped), `keys()` for the palette hint (the
@@ -415,7 +430,8 @@ type comes from the person's settings, else Herdr's.
   *Mayonaka* group after *Recent*. The app's palette lists `commands()`, which
   leaves out a mod's `<mod>.<command>`, so those can only be added in a copy. The
   group holds `mayonaka-tabs.<id>` for each child of the layout's `panel-body`
-  stack (*Toggle Files / Changes / Graph panel*, from `layout()`),
+  stack (*Toggle Files / Changes / Graph / Mizar panel*, from `layout()`),
+  *Open Mizar card to the right* (`pane.split {direction: "right", mod: "mayonaka-mizar"}`),
   `mayonaka-tabs.files-search` (*Find file in Files panel*),
   `mayonaka-tabs.reopen-file` (*Reopen closed file*, when
   `shared("mayonaka-editor.closed")` is non-empty), and
@@ -436,7 +452,8 @@ type comes from the person's settings, else Herdr's.
   640, height: 408 }`; `search.svg` is its own.
 - `keys.json`: `global`: `cmd-alt-b` toggles the Files panel
   (`mayonaka-tabs.files`), `cmd-alt-f` searches files in the Files panel
-  (`mayonaka-tabs.files-search`), `cmd-shift-p` opens `mayonaka-palette` in place
+  (`mayonaka-tabs.files-search`), `cmd-alt-m` toggles the Mizar panel
+  (`mayonaka-tabs.mizar`), `cmd-shift-p` opens `mayonaka-palette` in place
   of the app's `app.palette`; `mod:mayonaka-files`: `cmd-f` starts file search,
   `cmd-shift-t` reopens a closed file; `mod:mayonaka-editor`: `cmd-s` save,
   `cmd-shift-v` preview toggle, `cmd-w` close file card, `cmd-shift-t` reopen
@@ -519,7 +536,7 @@ type comes from the person's settings, else Herdr's.
 
 ## Done when
 
-- `herdr-app check` passes for each of the eleven folders under `mods/`.
+- `herdr-app check` passes for each of the twelve folders under `mods/`.
 - With `layout.switch {name: "mayonaka"}`, the window shows the rail, the lists,
   the tab bar, the card-framed terminals with their 30px headers and the status
   bar, and `herdr-app status` reports no `errors`.

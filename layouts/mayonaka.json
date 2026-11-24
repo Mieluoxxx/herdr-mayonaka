@@ -148,6 +148,13 @@
                       "content": {
                         "mod": "mayonaka-gitgraph"
                       }
+                    },
+                    {
+                      "id": "mizar",
+                      "type": "block",
+                      "content": {
+                        "mod": "mayonaka-mizar"
+                      }
                     }
                   ],
                   "active": "files"
