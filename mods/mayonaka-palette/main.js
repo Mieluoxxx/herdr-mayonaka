@@ -17,7 +17,7 @@ const LIST_H = SHOWN * ROW_H;
 const GROUPS = ["Recent", "Mayonaka", "Tab", "Pane", "Space", "Layout", "Terminal", "Agent", "Window", "App"];
 
 // The panel ids are the children of the layout's "panel-body" stack; mayonaka-tabs toggles any of them.
-const PANELS = [["files", "Files"], ["changes", "Changes"], ["gitgraph", "Graph"], ["mizar", "Mizar"]];
+const PANELS = [["files", "Files"], ["changes", "Changes"], ["gitgraph", "Graph"]];
 
 // The palette's names for commands: [command, args, group, title, keywords].
 const NAMED = [
@@ -112,7 +112,8 @@ function mayonakaEntries({ editor, reopen, browser }) {
     list.push({ name: "pane.split", args: { direction: "right", argv: ["terminal-browser"] }, group: "Mayonaka", title: "Open browser to the right", words: "terminal-browser web chromium split" });
     list.push({ name: "tab.new", args: { name: "Browser", argv: ["terminal-browser"] }, group: "Mayonaka", title: "Open browser in a new tab", words: "terminal-browser web chromium" });
   }
-  list.push({ name: "pane.split", args: { direction: "right", mod: "mayonaka-mizar" }, group: "Mayonaka", title: "Open Mizar card to the right", words: "mizar agent ai chat split pane" });
+  list.push({ name: "mayonaka-tabs.open-mizar-tab", args: {}, group: "Mayonaka", title: "New Mizar tab", words: "mizar agent ai chat tab launch" });
+  list.push({ name: "mayonaka-tabs.split-mizar-right", args: {}, group: "Mayonaka", title: "Open Mizar card to the right", words: "mizar agent ai chat split pane" });
   return list;
 }
 

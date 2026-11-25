@@ -59,7 +59,8 @@ export default class NewMenu extends View {
     const space = spaces().find(s => s.active);
     const installed = this.agents.filter(a => a.installed);
     const choices = this.failed ? installed : [...installed, ...this.agents.filter(a => !a.installed).slice(0, 2)];
-    const extra = this.browser === undefined ? 0 : 31;
+    // +31px for the Mizar row right below Terminal (plus 31px when Browser is present).
+    const extra = (this.browser === undefined ? 0 : 31) + 31;
     return v_flex().min_h(0).w_full().h(Math.min(491 + extra, 167 + extra + Math.max(1, choices.length + (this.failed ? 1 : 0)) * 31)).bg(t.popover).p(5).text_size(12.8)
       .id("new-menu").track_focus(this.handle)
       .on_key_down((e) => {
@@ -70,6 +71,7 @@ export default class NewMenu extends View {
         run("tab.new", { name: agent.name, space: space?.id, argv: agent.run });
       })
       .child(this.row("terminal", svg("icons/shell.svg").size(14), "Terminal", () => run("tab.new", { space: space?.id }), shortcut("tab.new")))
+      .child(this.row("mizar", svg("mods/mayonaka-mizar/mizar.svg").size(14).text_color(t.foreground), "Mizar", () => run("mayonaka-tabs.open-mizar-tab"), shortcut("mayonaka-tabs.open-mizar-tab")))
       // terminal-browser's own --split and new-tab script Ghostty, which Herdr is not: it runs as the tab's program instead.
       .when(this.browser !== undefined, el => el.child(this.row("browser", svg("mods/mayonaka-new-menu/globe.svg").size(14), "Browser",
         () => run("tab.new", { name: "Browser", space: space?.id, argv: ["terminal-browser"] }), this.browser === false ? "not installed" : "", this.browser === true)))

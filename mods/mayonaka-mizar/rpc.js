@@ -327,6 +327,24 @@ export class MizarRpcClient {
   capabilitiesList(sessionId = null) {
     return this.call("capabilities.list", sessionId ? { session_id: sessionId } : {});
   }
+  sessionNew(title = null) {
+    return this.call("session.new", title ? { title } : {});
+  }
+  sessionSwitch(sessionId) {
+    return this.call("session.switch", { session_id: sessionId });
+  }
+  sessionCompact(sessionId, focus = null) {
+    const params = { session_id: sessionId };
+    if (focus) params.focus = focus;
+    return this.call("session.compact", params, 120000);
+  }
+  bashRun(sessionId, command, excludeFromContext = false) {
+    return this.call(
+      "bash.run",
+      { session_id: sessionId, command, exclude_from_context: Boolean(excludeFromContext) },
+      300000,
+    );
+  }
 }
 
 export function createSessionState() {

@@ -111,7 +111,7 @@ export default class Pane extends View {
     const isMizar = p.mod === "mayonaka-mizar";
     const editorId = isEditor ? (shared("mayonaka-editor.ids") ?? {})[pane] : null;
     const editorInfo = editorId ? (shared("mayonaka-editor.files") ?? {})[editorId] : null;
-    const mizarInfo = isMizar ? shared("mayonaka-mizar.status") : null;
+    const mizarInfo = isMizar ? (shared("mayonaka-mizar.panes") ?? {})[pane] : null;
     const activeFile = editorInfo?.file ?? null;
     const fileBase = activeFile ? baseName(activeFile) : "";
     const name = isEditor

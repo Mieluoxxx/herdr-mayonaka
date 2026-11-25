@@ -1,10 +1,9 @@
 # Mayonaka
 
 A dark, quiet layout for the [Herdr](https://herdr.dev) desktop app: a slim
-sidebar with your spaces and agents, tab pills across the top, and terminals as
-rounded cards. A panel on the right holds a file browser that opens files in an
-editor pane beside the terminals, the shipped Changes panel, a lane graph of
-every branch, and a native Mizar agent view.
+sidebar with your spaces and agents, tab pills across the top, terminals and
+native **Mizar** chat cards in the main workspace, and a right panel holding a
+file browser, Changes list, and git lane graph.
 
 ![Mayonaka](preview.png)
 
@@ -33,23 +32,26 @@ every branch, and a native Mizar agent view.
   space on that machine; `⌘S` saves at once.
 - **Graph**: local branches, remote branches and tags as colored lanes. Click a
   commit for its message and changed files. It never writes to the repository.
-- **Mizar**: connects to a local Mizar process (`~/.mizar/run/p-*.json`) over
-  authenticated `127.0.0.1` TCP (`auth.hello`), rendering streaming markdown,
-  reasoning, tool diffs/summaries, inline high-risk approvals, subagent
-  drilling, lineage tree forks, and queued inputs (`⌘⌥M` or split card).
+- **Mizar**: opens as a first-class workspace tab or split card (`⌘⌥M`, `+`
+  menu, or command palette) and spawns its own headless `mizar rpc` process over
+  authenticated `127.0.0.1` TCP (`auth.hello`). Renders Mizar's native
+  minimalist chat view (`pi-emphasis` semantic pills, colored unified diffs,
+  collapsible thinking/tool cards, `/` slash pickers, `@` file mention
+  completion, `!`/`!!` local shell, inline approvals, subagent drilling, and
+  1-line bottom status bar) with zero duplicate headers.
 - **Status bar**: the current agent's session, plus CPU load and used memory of
   the machine the shown space lives on.
 - **Command palette**: `⌘⇧P` opens Herdr's palette with a Mayonaka group on
-  top: toggle the Files, Changes, Graph and Mizar panels, open a Mizar card to
-  the right, find a file in the Files
+  top: toggle the Files, Changes and Graph panels, open a new Mizar tab or split
+  a Mizar card to the right, find a file in the Files
   panel, reopen a closed file, and save, switch preview, close the file card or
   turn auto save off and on when the tab has an editor card. With
   [terminal-browser](https://github.com/zenbu-labs/terminal-browser) installed
   it also opens that browser in a split to the right or in a new tab.
-- **New tab menu**: the `+` in the tab bar lists Browser under Terminal when
-  terminal-browser is installed, and opens it in a tab of its own.
-- **Keys**: `⌘⌥B` toggles the Files panel, `⌘⌥F` searches files, `⌘⌥M` toggles
-  the Mizar panel, `⌘⇧P` opens the
+- **New tab menu**: the `+` in the tab bar lists **Mizar** right under Terminal
+  (and Browser when terminal-browser is installed).
+- **Keys**: `⌘⌥B` toggles the Files panel, `⌘⌥F` searches files, `⌘⌥M` opens a
+  new Mizar tab, `⌘⇧P` opens the
   palette, `⌘⌥←/→/↑/↓` moves focus between terminal and file cards (`⌘⌥⇧←/→/↑/↓`
   swaps cards), and in an editor card `⌘S` saves, `⌘⇧V` switches between preview
   and source, `⌘W` closes the file card, and `⌘⇧T` reopens the last closed file.
@@ -98,10 +100,11 @@ These mods run programs and touch files, on the machine the pane lives on:
   `cache/mayonaka-editor/save/` under the app's home. It reads the file first and
   refuses the save if it changed since it was opened.
 - `mayonaka-gitgraph` runs read-only `git` commands.
-- `mayonaka-mizar` reads `~/.mizar/run/p-*.json` (`0600` token) and connects
-  strictly to `127.0.0.1` loopback Mizar processes to stream sessions, submit
-  prompts, fork branches, and resolve approvals. It never connects to external
-  hosts.
+- `mayonaka-mizar` spawns a local `mizar rpc` process (`~/.local/bin/mizar` or
+  `mizar` on `PATH`), reads its `0600` loopback ready file, and connects
+  strictly over `127.0.0.1` (`auth.hello`) to stream sessions, run local
+  `!`/`!!` shell commands, fork branches, and resolve approvals. It never connects
+  to external hosts.
 - `mayonaka-status` runs `iostat`, `vm_stat` and `sysctl` on macOS, or reads
   `/proc` on Linux, every 5 seconds.
 

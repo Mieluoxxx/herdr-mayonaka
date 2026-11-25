@@ -2,7 +2,7 @@
   "global": {
     "cmd-alt-b": "mayonaka-tabs.files",
     "cmd-alt-f": "mayonaka-tabs.files-search",
-    "cmd-alt-m": "mayonaka-tabs.mizar",
+    "cmd-alt-m": "mayonaka-tabs.open-mizar-tab",
     "cmd-shift-p": "mod.open:mayonaka-palette"
   },
   "mod:mayonaka-files": {

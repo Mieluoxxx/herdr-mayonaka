@@ -60,10 +60,54 @@ export default class Tabs extends View {
         } else if (id === "reopen-file") {
           this.reopenClosedFile(cx);
           cx.notify();
+        } else if (id === "open-mizar-tab") {
+          this.openMizar(cx, { splitRight: false });
+          cx.notify();
+        } else if (id === "split-mizar-right") {
+          this.openMizar(cx, { splitRight: true });
+          cx.notify();
         } else if (id) {
           this.togglePanel(id);
           cx.notify();
         }
+      }
+    });
+  }
+
+  openMizar(cx, { splitRight = false } = {}) {
+    const f = focused();
+    const activeSpace = spaces().find((s) => s.active);
+    const allPanes = panes();
+    const focusedPane = f?.pane ? allPanes.find((p) => p.pane === f.pane) : null;
+    const activeTabId = f?.tab ?? activeSpace?.tabs?.find((t) => t.active)?.id;
+    const tabAnchor = activeTabId ? allPanes.find((p) => p.tab === activeTabId) : null;
+    const cwd = f?.cwd ?? focusedPane?.cwd ?? tabAnchor?.cwd ?? activeSpace?.folder ?? null;
+    const id = `mz${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    const prevPanes = new Set(allPanes.filter((p) => p.mod === "mayonaka-mizar").map((p) => p.pane));
+
+    if (splitRight) {
+      const anchor = focusedPane?.pane ?? tabAnchor?.pane ?? null;
+      run("pane.split", {
+        direction: "right",
+        ...(anchor ? { pane: anchor } : {}),
+        mod: "mayonaka-mizar",
+        props: { id, ...(cwd ? { cwd } : {}) },
+      });
+    } else {
+      run("tab.new", {
+        name: "Mizar",
+        ...(activeSpace?.id ? { space: activeSpace.id } : {}),
+        mod: "mayonaka-mizar",
+        props: { id, ...(cwd ? { cwd } : {}) },
+      });
+    }
+
+    cx.spawn(async () => {
+      await cx.sleep(60);
+      const curIds = shared("mayonaka-mizar.ids") ?? {};
+      const fresh = panes().find((p) => p.mod === "mayonaka-mizar" && !prevPanes.has(p.pane) && !curIds[p.pane]);
+      if (fresh) {
+        setShared("mayonaka-mizar.ids", { ...curIds, [fresh.pane]: id });
       }
     });
   }
@@ -145,9 +189,21 @@ export default class Tabs extends View {
     const stop = (_e, cx) => cx.stop_propagation();
     const button = (id, label, action) => div().id(id).size(26).flex_none().flex().items_center().justify_center().rounded(6).text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground))
       .on_mouse_down("left", stop).on_click(action).child(label);
+    const mizarPanes = shared("mayonaka-mizar.panes") ?? {};
+    const allPanes = panes();
     const item = (c, i) => {
-      const program = panes().find(p => p.tab === c.id && p.program?.agent)?.program ?? panes().find(p => p.tab === c.id)?.program;
-      const name = /^tb\d+$/.test(c.name) ? program?.name ?? "Terminal" : c.name;
+      const tabPanes = allPanes.filter(p => p.tab === c.id);
+      const program = tabPanes.find(p => p.program?.agent)?.program ?? tabPanes[0]?.program;
+      const mzPane = tabPanes.find(p => p.mod === "mayonaka-mizar");
+      const mzInfo = mzPane ? mizarPanes[mzPane.pane] : null;
+      const mzStatus = mzInfo
+        ? (mzInfo.state === "streaming" ? "working" : (mzInfo.state === "waiting_approval" || (mzInfo.pendingCount ?? 0) > 0) ? "blocked" : null)
+        : null;
+      const effectiveStatus = mzPane ? mzStatus : c.status;
+      const customTabName = c.name && !/^tb\d+$/.test(c.name) && c.name !== "Mizar";
+      const name = mzPane
+        ? (customTabName ? c.name : (mzInfo?.title || "Mizar"))
+        : (/^tb\d+$/.test(c.name) ? program?.name ?? "Terminal" : c.name);
       return h_flex().id(`tab-${c.id}`).h(29).px(10).gap(7).rounded(7).items_center().flex_none().text_size(12.8)
         .border(1).border_color(c.active ? t.border : t.chrome).bg(c.active ? t.raised : t.chrome).text_color(c.active ? t.foreground : t.muted)
         .hover(s => s.bg(t.hover))
@@ -158,15 +214,16 @@ export default class Tabs extends View {
           else run("tab.select", { id: c.id });
         })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "menu", kind: "popup", width: 200, props: { tab: "tab", target: { id: c.id, space: space.id } } }); })
-        .when(Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(14).text_color(t.muted) : image(program.icon).size(14)))
+        .when(Boolean(mzPane), el => el.child(svg("mods/mayonaka-mizar/mizar.svg").size(14).text_color(t.muted)))
+        .when(!mzPane && Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(14).text_color(t.muted) : image(program.icon).size(14)))
         .child(div().max_w(170).truncate().child(c.zoomed ? `${name} Z` : name))
-        .when(c.status === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
-        .when(c.status === "blocked" || c.status === "done", el => el.child(div().size(6).rounded(3).bg(t[c.status])))
+        .when(effectiveStatus === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
+        .when(effectiveStatus === "blocked" || effectiveStatus === "done", el => el.child(div().size(6).rounded(3).bg(t[effectiveStatus])))
         .when(c.active, el => el.child(div().id(`close-${c.id}`).text_color(t.dim).on_mouse_down("left", stop).on_click((_e, cx) => {
           cx.stop_propagation();
           const command = { name: "tab.close", args: { id: c.id } };
-          if (c.status !== "working") return run(command.name, command.args);
-          openOverlay({ mod: "confirm", kind: "dialog", width: 380, height: 168, props: { title: `Close ${name}?`, detail: `${program?.name ?? "An agent"} is still working in this tab. Closing it stops the task.`, command } });
+          if (effectiveStatus !== "working") return run(command.name, command.args);
+          openOverlay({ mod: "confirm", kind: "dialog", width: 380, height: 168, props: { title: `Close ${name}?`, detail: `${mzPane ? "Mizar" : (program?.name ?? "An agent")} is still working in this tab. Closing it stops the task.`, command } });
         }).child(svg("mods/pane/close.svg").size(12))));
     };
     const root = layout(), sidebar = find(root, "sidebar"), w = window();
@@ -175,11 +232,10 @@ export default class Tabs extends View {
       ? Math.max(10, (root.traffic_lights[0] + 64) / settings().zoom - (sidebar?.hidden ? 0 : sidebar?.size?.px ?? 0))
       : 10;
     const panel = find(root, "panel"), body = find(root, "panel-body");
-    // Graph and Mizar aren't Herdr's shipped panels, so the welcome's choice never lists them:
-    // the buttons follow the layout having those blocks.
+    // Graph isn't one of Herdr's shipped panels, so the welcome's choice never lists it:
+    // the button follows the layout having the block.
     const graph = body?.children?.some(c => c.id === "gitgraph") ? ["gitgraph"] : [];
-    const mizar = body?.children?.some(c => c.id === "mizar") ? ["mizar"] : [];
-    const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), ...graph, ...mizar];
+    const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), ...graph];
     this.syncPanel(space, panel, body, enabled);
     const panelButton = (id, label, icon) => {
       const on = panel && !panel.hidden && body?.active === id;
@@ -192,12 +248,11 @@ export default class Tabs extends View {
       .on_mouse_up("left", () => { this.pressed = null; })
       .on_scroll_wheel(e => { if (Math.abs(e.delta.y) >= 1) run(e.delta.y > 0 ? "tab.prev" : "tab.next"); })
       .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_center().gap(3).overflow_x_scrollbar().children(shown.map(item)))
-      // 543: the shipped menu's 512 plus the Browser row mayonaka-new-menu adds.
-      .child(button("tab-new", "+", () => openOverlay({ mod: "mayonaka-new-menu", kind: "popup", width: 250, height: 543 })))
+      // 574: the shipped menu's 512 plus the Mizar and Browser rows mayonaka-new-menu adds.
+      .child(button("tab-new", "+", () => openOverlay({ mod: "mayonaka-new-menu", kind: "popup", width: 250, height: 574 })))
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
       .when(enabled.includes("gitgraph"), el => el.child(panelButton("gitgraph", "Graph", "mods/mayonaka-gitgraph/git-graph.svg")))
-      .when(enabled.includes("mizar"), el => el.child(panelButton("mizar", "Mizar", "mods/mayonaka-mizar/mizar.svg")))
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/mayonaka-tabs/win-min.svg").size(16) : "−", () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/mayonaka-tabs/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
         .child(button("close-window", w.platform === "windows" ? svg("mods/mayonaka-tabs/win-close.svg").size(16) : svg("mods/pane/close.svg").size(13), () => run("window.close"))));
