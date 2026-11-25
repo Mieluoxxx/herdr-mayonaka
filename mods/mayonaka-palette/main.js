@@ -112,6 +112,8 @@ function mayonakaEntries({ editor, reopen, browser }) {
     list.push({ name: "pane.split", args: { direction: "right", argv: ["terminal-browser"] }, group: "Mayonaka", title: "Open browser to the right", words: "terminal-browser web chromium split" });
     list.push({ name: "tab.new", args: { name: "Browser", argv: ["terminal-browser"] }, group: "Mayonaka", title: "Open browser in a new tab", words: "terminal-browser web chromium" });
   }
+  list.push({ name: "mayonaka-tabs.open-mizar-tab", args: {}, group: "Mayonaka", title: "New Mizar tab", words: "mizar agent ai chat tab launch" });
+  list.push({ name: "mayonaka-tabs.split-mizar-right", args: {}, group: "Mayonaka", title: "Open Mizar card to the right", words: "mizar agent ai chat split pane" });
   return list;
 }
 

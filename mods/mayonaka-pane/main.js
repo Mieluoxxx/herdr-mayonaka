@@ -108,22 +108,38 @@ export default class Pane extends View {
     if (!p) return div();
     const pane = p.pane, target = shared(DROP)?.pane === pane;
     const isEditor = p.mod === "mayonaka-editor";
+    const isMizar = p.mod === "mayonaka-mizar";
     const editorId = isEditor ? (shared("mayonaka-editor.ids") ?? {})[pane] : null;
     const editorInfo = editorId ? (shared("mayonaka-editor.files") ?? {})[editorId] : null;
+    const mizarInfo = isMizar ? (shared("mayonaka-mizar.panes") ?? {})[pane] : null;
     const activeFile = editorInfo?.file ?? null;
     const fileBase = activeFile ? baseName(activeFile) : "";
     const name = isEditor
       ? (fileBase || "Editor")
-      : ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "shell";
+      : isMizar
+        ? (mizarInfo?.title || "Mizar")
+        : ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "shell";
     const pic = isEditor
       ? (fileBase
         ? image(iconPath(fileIcon(fileBase))).w(14).h(14).flex_none()
         : svg("mods/mayonaka-editor/file.svg").size(14).flex_none().text_color(t.dim))
-      : icon(p.program, 14, t.dim);
-    const subtitle = isEditor ? editorDirPath(editorInfo) : folder(p.cwd);
+      : isMizar
+        ? svg("mods/mayonaka-mizar/mizar.svg").size(14).flex_none().text_color(t.dim)
+        : icon(p.program, 14, t.dim);
+    const subtitle = isEditor
+      ? editorDirPath(editorInfo)
+      : isMizar
+        ? (mizarInfo?.cwd ? folder(mizarInfo.cwd) : (mizarInfo?.model || "local rpc"))
+        : folder(p.cwd);
     const hasPreview = Boolean(isEditor && editorInfo?.hasPreview && editorId);
     const editorMode = editorInfo?.mode ?? "source";
-    const st = p.status;
+    const st = isMizar
+      ? (mizarInfo?.state === "streaming"
+        ? "working"
+        : (mizarInfo?.state === "waiting_approval" || (mizarInfo?.pendingCount ?? 0) > 0)
+          ? "blocked"
+          : null)
+      : p.status;
 
     return h_flex()
       .id(`pane-head-${pane}`)
